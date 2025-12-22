@@ -2,15 +2,15 @@
 Main experiment runner.
 Usage: python -m oco.run_experiment --config configs/toy.yaml
 
-Исправлено:
-- Данные генерируются один раз для всех алгоритмов
-- Стриминг логов для экономии памяти
-- Правильный подсчёт progress bar
+Features:
+- Pre-generates data once per trial for fair comparison
+- Streaming logs for memory efficiency
+- Saves optimal points for trajectory plots
 """
 
 import argparse
 import yaml
-import os
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
@@ -113,26 +113,29 @@ def set_problem_data_for_step(problem, data: Dict[str, Any], t: int):
         problem._y_t = data["y_list"][idx]
 
 
-def compute_optimal_loss(problem, data: Dict[str, Any], config: Dict[str, Any]) -> float:
-    """Compute optimal batch loss for regret calculation."""
+def compute_optimal_loss(problem, data: Dict[str, Any], config: Dict[str, Any]) -> Tuple[float, Optional[np.ndarray]]:
+    """
+    Compute optimal batch loss for regret calculation.
+    Returns (opt_loss, x_opt) where x_opt is the optimal point.
+    """
 
     if isinstance(problem, ToyQuadraticProblem):
-        _, opt_loss = solve_batch_quadratic(data["v_list"], problem.b)
-        return opt_loss
+        x_opt, opt_loss = solve_batch_quadratic(data["v_list"], problem.b)
+        return opt_loss, x_opt
 
     elif isinstance(problem, OnlineLogRegProblem):
         batch_cfg = config.get("batch_solver", {})
-        _, opt_loss = solve_batch_logreg(
+        w_opt, opt_loss = solve_batch_logreg(
             data["x_list"],
             data["y_list"],
             B=problem.B,
-            max_iter=batch_cfg.get("max_iter", 500),
-            lr=batch_cfg.get("lr", 0.1),
+            max_iter=batch_cfg.get("max_iter", 2000),
+            lr=batch_cfg.get("lr", 0.05),
             seed=batch_cfg.get("seed", 999)
         )
-        return opt_loss
+        return opt_loss, w_opt
 
-    return 0.0
+    return 0.0, None
 
 
 def run_single_algo_trial(
@@ -157,12 +160,11 @@ def run_single_algo_trial(
         # Set problem data for this step
         set_problem_data_for_step(problem, data, t)
 
-        # Algorithm step (returns x_t before update)
-        x_t = algo.step()
+        # Algorithm step returns (x_t, g_t) - ONE constraint query
+        x_t, g_t = algo.step()
 
-        # Compute metrics at x_t
+        # Compute loss (separate query, this is fine - loss != constraint)
         loss_t = problem.loss(x_t)
-        g_t = problem.constraint(x_t)
         viol_t = max(g_t, 0.0)
 
         cum_loss += loss_t
@@ -215,7 +217,10 @@ def run_experiment(config: Dict[str, Any], output_dir: Path):
 
     # Determine step subsampling for large experiments
     max_T = max(horizons)
-    step_subsample = 1 if max_T <= 20000 else max(1, max_T // 5000)
+    if benchmark == "toy":
+        step_subsample = 1  # Log all for toy (small T)
+    else:
+        step_subsample = max(1, max_T // 1000)  # ~1000 points per trial for logreg
 
     # Initialize logger with streaming
     logger = MetricsLogger(
@@ -231,6 +236,9 @@ def run_experiment(config: Dict[str, Any], output_dir: Path):
     total_runs = len(horizons) * trials * num_algorithms
     pbar = tqdm(total=total_runs, desc=f"Running {benchmark}")
 
+    # Storage for optimal points (for trajectory plot)
+    optimal_points = {}
+
     for T in horizons:
         algorithms = create_algorithms(problem, T, config)
 
@@ -241,7 +249,11 @@ def run_experiment(config: Dict[str, Any], output_dir: Path):
             data = pregenerate_data(problem, T, seed)
 
             # Compute optimal loss ONCE for this trial
-            opt_loss = compute_optimal_loss(problem, data, config)
+            opt_loss, x_opt = compute_optimal_loss(problem, data, config)
+
+            # Save x* for trajectory plot (only trial=1, max T)
+            if trial == 1 and T == max(horizons) and x_opt is not None:
+                optimal_points[f"T{T}_trial{trial}"] = x_opt.tolist()
 
             # Run all algorithms on the SAME data
             for algo_name, algo in algorithms.items():
@@ -259,7 +271,7 @@ def run_experiment(config: Dict[str, Any], output_dir: Path):
 
     pbar.close()
 
-    # Finalize logger
+    # Finalize logger (closes streaming file)
     logger.finalize()
 
     # Save aggregates
@@ -268,6 +280,11 @@ def run_experiment(config: Dict[str, Any], output_dir: Path):
 
     agg_df.to_csv(output_dir / "metrics_agg.csv", index=False)
     summary_df.to_csv(output_dir / "metrics_summary.csv", index=False)
+
+    # Save optimal points
+    if optimal_points:
+        with open(output_dir / "optimal_points.json", "w") as f:
+            json.dump(optimal_points, f, indent=2)
 
     # Save resolved config
     with open(output_dir / "config_resolved.yaml", "w") as f:

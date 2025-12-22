@@ -2,12 +2,13 @@
 Plotting utilities for experiment results.
 Usage: python -m oco.plot_results --input results/toy/<run_id>/
 
-Обновлено:
-- Добавлена optimal action точка на trajectory plot
-- Улучшена обработка данных
+Features:
+- Reads real optimal point from optimal_points.json
+- Exact every-Nth-step subsampling for trajectories
 """
 
 import argparse
+import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -50,7 +51,9 @@ def plot_regret_vs_T(agg_df: pd.DataFrame, output_path: Path):
     setup_plot_style()
     fig, ax = plt.subplots()
 
-    for algo in agg_df["algo"].unique():
+    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
+        if algo not in agg_df["algo"].values:
+            continue
         algo_data = agg_df[agg_df["algo"] == algo]
         grouped = algo_data.groupby("T")["regret"].agg(["mean", "std"])
 
@@ -80,7 +83,9 @@ def plot_cumviol_vs_T(agg_df: pd.DataFrame, output_path: Path):
     setup_plot_style()
     fig, ax = plt.subplots()
 
-    for algo in agg_df["algo"].unique():
+    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
+        if algo not in agg_df["algo"].values:
+            continue
         algo_data = agg_df[agg_df["algo"] == algo]
         grouped = algo_data.groupby("T")["cum_viol"].agg(["mean", "std"])
 
@@ -115,7 +120,9 @@ def plot_instviol_vs_t(step_df: pd.DataFrame, output_path: Path, T_plot: Optiona
 
     data = step_df[step_df["T"] == T_plot]
 
-    for algo in data["algo"].unique():
+    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
+        if algo not in data["algo"].values:
+            continue
         algo_data = data[data["algo"] == algo]
         grouped = algo_data.groupby("t")["viol_t"].agg(["mean", "std"])
 
@@ -147,14 +154,14 @@ def plot_instviol_vs_t(step_df: pd.DataFrame, output_path: Path, T_plot: Optiona
 
 def plot_trajectory_2d(step_df: pd.DataFrame, output_path: Path,
                        b: float = 0.51, subsample: int = 300):
-    """Plot A4: 2D trajectory plot for toy problem with optimal action."""
+    """Plot A4: 2D trajectory plot for toy problem with REAL optimal action."""
     setup_plot_style()
     fig, ax = plt.subplots(figsize=(8, 8))
 
     T_max = step_df["T"].max()
     trial_1 = step_df[(step_df["T"] == T_max) & (step_df["trial"] == 1)]
 
-    # Draw box constraint
+    # Draw box constraint (feasible region X)
     rect = plt.Rectangle((-b, -b), 2*b, 2*b, fill=False,
                          edgecolor="black", linewidth=2, linestyle="--",
                          label="Feasible region X")
@@ -164,26 +171,31 @@ def plot_trajectory_2d(step_df: pd.DataFrame, output_path: Path,
     theta = np.linspace(0, 2*np.pi, 100)
     ax.plot(np.cos(theta), np.sin(theta), 'k:', alpha=0.5, label="X₀ boundary")
 
-    # Compute and plot optimal action (mean of v_t projected onto box)
-    # Since v_t ~ Unif([0,1]^2), E[v_t] ≈ (0.5, 0.5), which is inside the box
-    # For actual computation, we'd need the v_list, but we can estimate
-    x_opt = np.array([0.5, 0.5])  # Expected value
-    x_opt_proj = np.clip(x_opt, -b, b)  # Project onto box
-    ax.scatter(
-        [x_opt_proj[0]], [x_opt_proj[1]],
-        c="gold", marker="*", s=300,
-        edgecolors="black", linewidths=1.5,
-        label="x* (optimal)", zorder=10
-    )
+    # Load and plot REAL optimal action from saved file
+    opt_file = output_path / "optimal_points.json"
+    if opt_file.exists():
+        with open(opt_file, "r") as f:
+            optimal_points = json.load(f)
+        key = f"T{int(T_max)}_trial1"
+        if key in optimal_points:
+            x_opt = np.array(optimal_points[key])
+            ax.scatter(
+                [x_opt[0]], [x_opt[1]],
+                c="gold", marker="*", s=400,
+                edgecolors="black", linewidths=2,
+                label=f"x* = ({x_opt[0]:.3f}, {x_opt[1]:.3f})",
+                zorder=10
+            )
 
+    # Plot trajectories with EXACT every-Nth-step subsampling
     for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
         algo_data = trial_1[trial_1["algo"] == algo]
         if algo_data.empty or "x1" not in algo_data.columns:
             continue
 
-        # Subsample
-        indices = np.arange(0, len(algo_data), max(1, len(algo_data) // (T_max // subsample)))
-        subsampled = algo_data.iloc[indices]
+        # Sort by t and take every subsample-th step
+        algo_data_sorted = algo_data.sort_values("t")
+        subsampled = algo_data_sorted.iloc[::subsample]
 
         ax.scatter(
             subsampled["x1"],
@@ -197,7 +209,7 @@ def plot_trajectory_2d(step_df: pd.DataFrame, output_path: Path,
 
     ax.set_xlabel("x₁")
     ax.set_ylabel("x₂")
-    ax.set_title(f"Trajectories (T={T_max}, trial=1, subsampled)")
+    ax.set_title(f"Trajectories (T={int(T_max)}, every {subsample}th action)")
     ax.set_xlim(-1.2, 1.2)
     ax.set_ylim(-1.2, 1.2)
     ax.set_aspect("equal")
@@ -213,12 +225,14 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
     """Generate plots for logreg benchmark."""
     setup_plot_style()
     T = step_df["T"].max()
+    data = step_df[step_df["T"] == T]
 
     # B1: Cumulative loss over time
     fig, ax = plt.subplots()
-    data = step_df[step_df["T"] == T]
 
-    for algo in data["algo"].unique():
+    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
+        if algo not in data["algo"].values:
+            continue
         algo_data = data[data["algo"] == algo]
         grouped = algo_data.groupby("t")["cum_loss"].agg(["mean", "std"])
 
@@ -240,7 +254,9 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
 
     # B2: Instantaneous violation
     fig, ax = plt.subplots()
-    for algo in data["algo"].unique():
+    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
+        if algo not in data["algo"].values:
+            continue
         algo_data = data[data["algo"] == algo]
         grouped = algo_data.groupby("t")["viol_t"].agg(["mean", "std"])
 
@@ -262,7 +278,9 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
 
     # B3: Cumulative violation
     fig, ax = plt.subplots()
-    for algo in data["algo"].unique():
+    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
+        if algo not in data["algo"].values:
+            continue
         algo_data = data[data["algo"] == algo]
         grouped = algo_data.groupby("t")["cum_viol"].agg(["mean", "std"])
 
@@ -286,17 +304,20 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
     fig, ax = plt.subplots(figsize=(8, 5))
     summary = agg_df.groupby("algo")["regret"].agg(["mean", "std"])
 
-    algos = summary.index.tolist()
-    x_pos = np.arange(len(algos))
+    # Order algorithms consistently
+    algo_order = [a for a in ["PFS", "DPP", "DPP-T", "POGD"] if a in summary.index]
+    summary = summary.loc[algo_order]
+
+    x_pos = np.arange(len(algo_order))
 
     bars = ax.bar(x_pos, summary["mean"], yerr=summary["std"],
-                  color=[COLORS.get(a, "gray") for a in algos],
+                  color=[COLORS.get(a, "gray") for a in algo_order],
                   capsize=5, alpha=0.8)
 
     ax.set_xticks(x_pos)
-    ax.set_xticklabels(algos)
+    ax.set_xticklabels(algo_order)
     ax.set_ylabel("Final Regret")
-    ax.set_title(f"Final Regret Comparison (T={T})")
+    ax.set_title(f"Final Regret Comparison (T={int(T)})")
     ax.grid(True, alpha=0.3, axis='y')
     plt.tight_layout()
     plt.savefig(output_path / "regret_comparison.png", dpi=150)
@@ -313,7 +334,12 @@ def generate_all_plots(output_dir: Path, config: Dict[str, Any]):
         print("Warning: metrics_step.csv not found, some plots will be skipped")
         step_df = pd.DataFrame()
 
-    agg_df = pd.read_csv(output_dir / "metrics_agg.csv")
+    agg_file = output_dir / "metrics_agg.csv"
+    if not agg_file.exists():
+        print("Error: metrics_agg.csv not found")
+        return
+
+    agg_df = pd.read_csv(agg_file)
 
     benchmark = config["benchmark"]
 
@@ -322,7 +348,7 @@ def generate_all_plots(output_dir: Path, config: Dict[str, Any]):
         plot_cumviol_vs_T(agg_df, output_dir)
 
         if not step_df.empty:
-            T_max = step_df["T"].max()
+            T_max = int(step_df["T"].max())
             plot_instviol_vs_t(step_df, output_dir, T_plot=T_max)
 
             if "x1" in step_df.columns:
@@ -334,7 +360,24 @@ def generate_all_plots(output_dir: Path, config: Dict[str, Any]):
         if not step_df.empty:
             plot_logreg_metrics(step_df, agg_df, output_dir)
         else:
-            print("Warning: Step data not available for logreg plots")
+            # At least plot regret comparison from aggregates
+            fig, ax = plt.subplots(figsize=(8, 5))
+            summary = agg_df.groupby("algo")["regret"].agg(["mean", "std"])
+            algo_order = [a for a in ["PFS", "DPP", "DPP-T", "POGD"] if a in summary.index]
+            if algo_order:
+                summary = summary.loc[algo_order]
+                x_pos = np.arange(len(algo_order))
+                ax.bar(x_pos, summary["mean"], yerr=summary["std"],
+                      color=[COLORS.get(a, "gray") for a in algo_order],
+                      capsize=5, alpha=0.8)
+                ax.set_xticks(x_pos)
+                ax.set_xticklabels(algo_order)
+                ax.set_ylabel("Final Regret")
+                ax.set_title("Final Regret Comparison")
+                ax.grid(True, alpha=0.3, axis='y')
+                plt.tight_layout()
+                plt.savefig(output_dir / "regret_comparison.png", dpi=150)
+                plt.close()
 
     print(f"Plots saved to {output_dir}")
 
@@ -347,7 +390,12 @@ def main():
     input_dir = Path(args.input)
 
     # Load config
-    with open(input_dir / "config_resolved.yaml", "r") as f:
+    config_file = input_dir / "config_resolved.yaml"
+    if not config_file.exists():
+        print(f"Error: {config_file} not found")
+        return
+
+    with open(config_file, "r") as f:
         config = yaml.safe_load(f)
 
     generate_all_plots(input_dir, config)
