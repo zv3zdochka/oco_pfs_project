@@ -1,6 +1,11 @@
 """
 Main experiment runner.
 Usage: python -m oco.run_experiment --config configs/toy.yaml
+
+Исправлено:
+- Данные генерируются один раз для всех алгоритмов
+- Стриминг логов для экономии памяти
+- Правильный подсчёт progress bar
 """
 
 import argparse
@@ -8,7 +13,7 @@ import yaml
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import numpy as np
 from tqdm import tqdm
 
@@ -16,7 +21,7 @@ from .problems import ToyQuadraticProblem, OnlineLogRegProblem
 from .algorithms import PFSAlgorithm, DPPAlgorithm, DPPTAlgorithm, POGDAlgorithm
 from .utils.logging import MetricsLogger
 from .utils.seeding import get_trial_seed
-from .utils.batch_opt import solve_batch_logreg
+from .utils.batch_opt import solve_batch_logreg, solve_batch_quadratic
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -66,113 +71,137 @@ def create_algorithms(problem, T: int, config: Dict[str, Any]) -> Dict[str, Any]
     return algorithms
 
 
-def run_single_trial(
-        problem,
-        algorithms: Dict[str, Any],
-        T: int,
-        trial: int,
-        seed: int,
-        logger: MetricsLogger,
-        save_data: bool = False
-) -> Dict[str, Tuple[List, List]]:
-    """Run a single trial for all algorithms."""
+def pregenerate_data(problem, T: int, seed: int) -> Dict[str, Any]:
+    """
+    Pre-generate all random data for a trial.
+    This ensures all algorithms see exactly the same sequence.
+    """
+    rng = np.random.default_rng(seed)
 
-    # Data storage for batch optimization (logreg)
-    data_points = {"x": [], "y": []}
-    v_list = []  # For toy problem
+    data = {"T": T}
 
-    results = {}
+    if isinstance(problem, ToyQuadraticProblem):
+        # Generate all v_t upfront
+        data["v_list"] = rng.uniform(0, 1, size=(T, problem.d))
 
-    for algo_name, algo in algorithms.items():
-        algo.reset()
-        rng = np.random.default_rng(seed)
+    elif isinstance(problem, OnlineLogRegProblem):
+        # Generate all (x_t, y_t) upfront
+        x_list = []
+        y_list = []
+        for _ in range(T):
+            x_t = rng.standard_normal(problem.d)
+            prob = 1.0 / (1.0 + np.exp(-np.dot(problem._w_star, x_t)))
+            y_t = 1 if rng.random() < prob else -1
+            x_list.append(x_t)
+            y_list.append(y_t)
 
-        cum_loss = 0.0
-        cum_viol = 0.0
-        max_viol = 0.0
-        losses = []
-        viols = []
+        data["x_list"] = x_list
+        data["y_list"] = y_list
 
-        for t in range(1, T + 1):
-            # Sample loss parameters
-            problem.sample_loss_params(rng)
+    return data
 
-            # Store data for baseline computation
-            if algo_name == list(algorithms.keys())[0]:  # Only first algo
-                if hasattr(problem, 'get_v_t'):
-                    v_list.append(problem.get_v_t())
-                if hasattr(problem, 'get_data_point'):
-                    x_t_data, y_t_data = problem.get_data_point()
-                    data_points["x"].append(x_t_data)
-                    data_points["y"].append(y_t_data)
 
-            # Algorithm step
-            x_t = algo.step()
+def set_problem_data_for_step(problem, data: Dict[str, Any], t: int):
+    """Set problem's internal state to use pre-generated data for step t."""
+    idx = t - 1  # t is 1-indexed
 
-            # Compute metrics
-            loss_t = problem.loss(x_t)
-            g_t = problem.constraint(x_t)
-            viol_t = max(g_t, 0.0)
+    if isinstance(problem, ToyQuadraticProblem):
+        problem._v_t = data["v_list"][idx]
 
-            cum_loss += loss_t
-            cum_viol += viol_t
-            max_viol = max(max_viol, viol_t)
+    elif isinstance(problem, OnlineLogRegProblem):
+        problem._x_t = data["x_list"][idx]
+        problem._y_t = data["y_list"][idx]
 
-            losses.append(loss_t)
-            viols.append(viol_t)
 
-            # Log step
-            logger.log_step(
-                algo=algo_name,
-                trial=trial,
-                T=T,
-                t=t,
-                loss_t=loss_t,
-                g_t=g_t,
-                x=x_t,
-                cum_loss=cum_loss,
-                cum_viol=cum_viol
-            )
+def compute_optimal_loss(problem, data: Dict[str, Any], config: Dict[str, Any]) -> float:
+    """Compute optimal batch loss for regret calculation."""
 
-        results[algo_name] = {
-            "cum_loss": cum_loss,
-            "cum_viol": cum_viol,
-            "max_viol": max_viol,
-            "losses": losses,
-            "viols": viols
-        }
+    if isinstance(problem, ToyQuadraticProblem):
+        _, opt_loss = solve_batch_quadratic(data["v_list"], problem.b)
+        return opt_loss
 
-    # Compute optimal baseline
-    if hasattr(problem, 'compute_optimal_batch') and v_list:
-        _, opt_loss = problem.compute_optimal_batch(np.array(v_list))
-    elif data_points["x"]:
-        # Batch solver for logreg
-        batch_cfg = problem.__dict__.get("batch_solver", {})
+    elif isinstance(problem, OnlineLogRegProblem):
+        batch_cfg = config.get("batch_solver", {})
         _, opt_loss = solve_batch_logreg(
-            data_points["x"],
-            data_points["y"],
+            data["x_list"],
+            data["y_list"],
             B=problem.B,
-            max_iter=batch_cfg.get("max_iter", 5000),
-            lr=batch_cfg.get("lr", 0.01),
+            max_iter=batch_cfg.get("max_iter", 500),
+            lr=batch_cfg.get("lr", 0.1),
             seed=batch_cfg.get("seed", 999)
         )
-    else:
-        opt_loss = 0.0
+        return opt_loss
 
-    # Log aggregates with regret
-    for algo_name, res in results.items():
-        regret = res["cum_loss"] - opt_loss
-        logger.log_aggregate(
+    return 0.0
+
+
+def run_single_algo_trial(
+    problem,
+    algo,
+    algo_name: str,
+    data: Dict[str, Any],
+    T: int,
+    trial: int,
+    logger: MetricsLogger,
+    opt_loss: float
+) -> Dict[str, float]:
+    """Run a single algorithm for one trial."""
+
+    algo.reset()
+
+    cum_loss = 0.0
+    cum_viol = 0.0
+    max_viol = 0.0
+
+    for t in range(1, T + 1):
+        # Set problem data for this step
+        set_problem_data_for_step(problem, data, t)
+
+        # Algorithm step (returns x_t before update)
+        x_t = algo.step()
+
+        # Compute metrics at x_t
+        loss_t = problem.loss(x_t)
+        g_t = problem.constraint(x_t)
+        viol_t = max(g_t, 0.0)
+
+        cum_loss += loss_t
+        cum_viol += viol_t
+        max_viol = max(max_viol, viol_t)
+
+        # Log step
+        logger.log_step(
             algo=algo_name,
-            T=T,
             trial=trial,
-            regret=regret,
-            cum_viol=res["cum_viol"],
-            max_viol=res["max_viol"],
-            cum_loss=res["cum_loss"]
+            T=T,
+            t=t,
+            loss_t=loss_t,
+            g_t=g_t,
+            x=x_t,
+            cum_loss=cum_loss,
+            cum_viol=cum_viol
         )
 
-    return results
+    # Compute regret
+    regret = cum_loss - opt_loss
+
+    # Log aggregate
+    logger.log_aggregate(
+        algo=algo_name,
+        T=T,
+        trial=trial,
+        regret=regret,
+        cum_viol=cum_viol,
+        max_viol=max_viol,
+        cum_loss=cum_loss
+    )
+
+    return {
+        "cum_loss": cum_loss,
+        "cum_viol": cum_viol,
+        "max_viol": max_viol,
+        "regret": regret
+    }
 
 
 def run_experiment(config: Dict[str, Any], output_dir: Path):
@@ -184,14 +213,22 @@ def run_experiment(config: Dict[str, Any], output_dir: Path):
     trials = exp_cfg["trials"]
     seed_base = exp_cfg["seed_base"]
 
-    logger = MetricsLogger(benchmark)
+    # Determine step subsampling for large experiments
+    max_T = max(horizons)
+    step_subsample = 1 if max_T <= 20000 else max(1, max_T // 5000)
+
+    # Initialize logger with streaming
+    logger = MetricsLogger(
+        benchmark=benchmark,
+        output_dir=output_dir,
+        step_subsample=step_subsample
+    )
+
     problem = create_problem(config)
 
-    # Add batch solver config to problem if present
-    if "batch_solver" in config:
-        problem.batch_solver = config["batch_solver"]
-
-    total_runs = len(horizons) * trials * 4  # 4 algorithms
+    # Calculate total runs for progress bar
+    num_algorithms = len(config["algorithms"])
+    total_runs = len(horizons) * trials * num_algorithms
     pbar = tqdm(total=total_runs, desc=f"Running {benchmark}")
 
     for T in horizons:
@@ -200,25 +237,35 @@ def run_experiment(config: Dict[str, Any], output_dir: Path):
         for trial in range(1, trials + 1):
             seed = get_trial_seed(seed_base, trial, T)
 
-            run_single_trial(
-                problem=problem,
-                algorithms=algorithms,
-                T=T,
-                trial=trial,
-                seed=seed,
-                logger=logger
-            )
+            # Pre-generate data ONCE for this trial
+            data = pregenerate_data(problem, T, seed)
 
-            pbar.update(len(algorithms))
+            # Compute optimal loss ONCE for this trial
+            opt_loss = compute_optimal_loss(problem, data, config)
+
+            # Run all algorithms on the SAME data
+            for algo_name, algo in algorithms.items():
+                run_single_algo_trial(
+                    problem=problem,
+                    algo=algo,
+                    algo_name=algo_name,
+                    data=data,
+                    T=T,
+                    trial=trial,
+                    logger=logger,
+                    opt_loss=opt_loss
+                )
+                pbar.update(1)
 
     pbar.close()
 
-    # Save results
-    step_df = logger.get_step_df()
+    # Finalize logger
+    logger.finalize()
+
+    # Save aggregates
     agg_df = logger.get_agg_df()
     summary_df = logger.compute_summary()
 
-    step_df.to_csv(output_dir / "metrics_step.csv", index=False)
     agg_df.to_csv(output_dir / "metrics_agg.csv", index=False)
     summary_df.to_csv(output_dir / "metrics_summary.csv", index=False)
 
@@ -226,7 +273,7 @@ def run_experiment(config: Dict[str, Any], output_dir: Path):
     with open(output_dir / "config_resolved.yaml", "w") as f:
         yaml.dump(config, f)
 
-    print(f"Results saved to {output_dir}")
+    print(f"\nResults saved to {output_dir}")
 
     # Generate plots
     from .plot_results import generate_all_plots
