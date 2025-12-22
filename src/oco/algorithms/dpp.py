@@ -4,7 +4,7 @@ From: Yu et al., 2017 "Online Convex Optimization with Stochastic Constraints"
 """
 
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from .base import Algorithm
 
@@ -36,12 +36,12 @@ class DPPAlgorithm(Algorithm):
         super().reset()
         self.Q = 0.0
 
-    def step(self) -> np.ndarray:
+    def step(self) -> Tuple[np.ndarray, float]:
         """Perform one DPP step."""
         self.t += 1
         x_t = self.x.copy()
 
-        # Get gradients
+        # Get gradients - ONE constraint query
         grad_f = self.problem.grad_loss(x_t)
         g_t = self.problem.constraint(x_t)
         u_t = self.problem.subgrad_constraint(x_t)
@@ -58,4 +58,4 @@ class DPPAlgorithm(Algorithm):
         self.Q = max(queue_update, 0.0)
 
         self.x = x_next
-        return x_t
+        return x_t, g_t

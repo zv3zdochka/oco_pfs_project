@@ -61,20 +61,3 @@ class ToyQuadraticProblem:
     def initial_point(self) -> np.ndarray:
         """Starting point x_1 = 0"""
         return np.zeros(self.d)
-
-    def compute_optimal_batch(self, v_list: np.ndarray) -> Tuple[np.ndarray, float]:
-        """
-        Compute optimal fixed point for batch problem.
-        min_{x in X} sum_t f_t(x) = min_{x in X} 3 * sum_t ||x - v_t||^2
-        Solution: project mean(v_t) onto X.
-        """
-        v_mean = np.mean(v_list, axis=0)
-        x_opt = self.project_X(v_mean)
-
-        # Compute optimal loss
-        opt_loss = 0.0
-        for v_t in v_list:
-            diff = x_opt - v_t
-            opt_loss += 3.0 * np.dot(diff, diff)
-
-        return x_opt, opt_loss

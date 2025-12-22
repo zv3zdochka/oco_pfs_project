@@ -4,7 +4,7 @@ Same as DPP but uses g_ρ(x) = g(x) + ρ
 """
 
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from .base import Algorithm
 
@@ -40,14 +40,14 @@ class DPPTAlgorithm(Algorithm):
         super().reset()
         self.Q = 0.0
 
-    def step(self) -> np.ndarray:
+    def step(self) -> Tuple[np.ndarray, float]:
         """Perform one DPP-T step."""
         self.t += 1
         x_t = self.x.copy()
 
-        # Get gradients
+        # Get gradients - ONE constraint query
         grad_f = self.problem.grad_loss(x_t)
-        g_t = self.problem.constraint(x_t)  # Original g(x)
+        g_t = self.problem.constraint(x_t)  # Original g(x) for metrics
         u_t = self.problem.subgrad_constraint(x_t)
 
         # Tightened constraint value for queue update
@@ -66,4 +66,4 @@ class DPPTAlgorithm(Algorithm):
         self.Q = max(queue_update, 0.0)
 
         self.x = x_next
-        return x_t
+        return x_t, g_t  # Return original g_t for metrics

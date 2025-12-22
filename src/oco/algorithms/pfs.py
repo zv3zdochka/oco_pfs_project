@@ -7,7 +7,7 @@ From paper: "Constrained Online Convex Optimization with Polyak Feasibility Step
 """
 
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from .base import Algorithm
 from ..utils.projections import project_ball
@@ -45,12 +45,12 @@ class PFSAlgorithm(Algorithm):
     def name(self) -> str:
         return "PFS"
 
-    def step(self) -> np.ndarray:
+    def step(self) -> Tuple[np.ndarray, float]:
         """Perform one PFS step as in Algorithm 1."""
         self.t += 1
         x_t = self.x.copy()
 
-        # 1. Query constraint at x_t (NOT at y_t!)
+        # 1. Query constraint at x_t (NOT at y_t!) - THIS IS THE ONE QUERY
         g_t = self.problem.constraint(x_t)
         s_t = self.problem.subgrad_constraint(x_t)
 
@@ -72,4 +72,4 @@ class PFSAlgorithm(Algorithm):
         # 4. Project onto B(R)
         self.x = project_ball(y_t, self.R)
 
-        return x_t
+        return x_t, g_t

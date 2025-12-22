@@ -19,7 +19,7 @@ class OnlineLogRegProblem:
 
     d: int = 20
     R0: float = 5.0  # radius of X_0
-    B: float = 2.0  # true constraint ||w||_2 <= B
+    B: float = 2.0   # true constraint ||w||_2 <= B
     w_star_seed: int = 123
 
     def __post_init__(self):

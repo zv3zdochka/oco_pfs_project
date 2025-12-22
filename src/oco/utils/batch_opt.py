@@ -11,23 +11,28 @@ def solve_batch_logreg(
     x_data: List[np.ndarray],
     y_data: List[int],
     B: float,
-    max_iter: int = 500,
-    lr: float = 0.1,
-    seed: int = 999
+    max_iter: int = 2000,
+    lr: float = 0.05,
+    seed: int = 999,
+    tol: float = 1e-6
 ) -> Tuple[np.ndarray, float]:
     """
     Solve batch logistic regression:
     min_{||w||_2 <= B} sum_t log(1 + exp(-y_t * w^T x_t))
 
-    Uses VECTORIZED projected gradient descent.
+    Uses VECTORIZED projected gradient descent with:
+    - Adaptive learning rate
+    - Early stopping by gradient norm
+    - Backtracking when loss increases
 
     Args:
-        x_data: List of feature vectors (T, d)
+        x_data: List of feature vectors
         y_data: List of labels {-1, +1}
         B: Radius constraint
-        max_iter: Number of GD iterations (reduced due to vectorization efficiency)
-        lr: Learning rate
+        max_iter: Maximum iterations
+        lr: Initial learning rate
         seed: Random seed
+        tol: Gradient norm tolerance for early stopping
 
     Returns:
         w_opt: Optimal weight vector
@@ -41,7 +46,7 @@ def solve_batch_logreg(
 
     T, d = X.shape
 
-    # Initialize
+    # Initialize near origin
     w = rng.standard_normal(d) * 0.01
     norm_w = np.linalg.norm(w)
     if norm_w > B:
@@ -49,8 +54,7 @@ def solve_batch_logreg(
 
     def compute_loss_vectorized(w: np.ndarray) -> float:
         """Vectorized loss computation."""
-        margins = y * (X @ w)  # Shape: (T,)
-        # Numerically stable log(1 + exp(-margin))
+        margins = y * (X @ w)
         losses = np.where(
             margins > 0,
             np.log1p(np.exp(-margins)),
@@ -60,46 +64,61 @@ def solve_batch_logreg(
 
     def compute_grad_vectorized(w: np.ndarray) -> np.ndarray:
         """Vectorized gradient computation."""
-        margins = y * (X @ w)  # Shape: (T,)
-
-        # Numerically stable sigmoid
+        margins = y * (X @ w)
         sigmoid = np.where(
             margins > 0,
             1.0 / (1.0 + np.exp(-margins)),
             np.exp(margins) / (1.0 + np.exp(margins))
         )
-
-        # ∇f = sum_t (-y_t * x_t * (1 - sigmoid_t))
-        # = -X^T @ (y * (1 - sigmoid))
-        coeffs = y * (1.0 - sigmoid)  # Shape: (T,)
-        grad = -X.T @ coeffs  # Shape: (d,)
-
+        coeffs = y * (1.0 - sigmoid)
+        grad = -X.T @ coeffs
         return grad
 
-    # Projected GD with adaptive step size
+    def project_to_ball(w: np.ndarray) -> np.ndarray:
+        """Project onto ball of radius B."""
+        norm_w = np.linalg.norm(w)
+        if norm_w > B:
+            return w * (B / norm_w)
+        return w
+
+    # Track best solution
     best_w = w.copy()
     best_loss = compute_loss_vectorized(w)
 
+    current_lr = lr
+    no_improve_count = 0
+
     for iteration in range(max_iter):
         grad = compute_grad_vectorized(w)
+        grad_norm = np.linalg.norm(grad)
 
-        # Gradient step
-        w = w - lr * grad
+        # Early stopping by gradient norm
+        if grad_norm < tol:
+            break
 
-        # Project onto ball
-        norm_w = np.linalg.norm(w)
-        if norm_w > B:
-            w = w * (B / norm_w)
+        # Gradient step with current lr
+        w_new = project_to_ball(w - current_lr * grad)
+        new_loss = compute_loss_vectorized(w_new)
+
+        # Backtracking if loss increased
+        if new_loss > best_loss:
+            no_improve_count += 1
+            if no_improve_count >= 10:
+                current_lr *= 0.5
+                no_improve_count = 0
+        else:
+            no_improve_count = 0
+
+        w = w_new
 
         # Track best
-        current_loss = compute_loss_vectorized(w)
-        if current_loss < best_loss:
-            best_loss = current_loss
+        if new_loss < best_loss:
+            best_loss = new_loss
             best_w = w.copy()
 
-        # Simple adaptive lr (optional, helps convergence)
-        if iteration > 0 and iteration % 100 == 0:
-            lr *= 0.9
+        # Scheduled lr decay
+        if iteration > 0 and iteration % 500 == 0:
+            current_lr *= 0.8
 
     return best_w, best_loss
 
@@ -110,6 +129,14 @@ def solve_batch_quadratic(v_list: np.ndarray, b: float) -> Tuple[np.ndarray, flo
     min_{x in [-b,b]^d} sum_t 3*||x - v_t||^2
 
     Closed-form solution: project mean(v_t) onto box.
+
+    Args:
+        v_list: Array of v_t vectors, shape (T, d)
+        b: Box constraint bound
+
+    Returns:
+        x_opt: Optimal point
+        opt_loss: Optimal loss value
     """
     v_mean = np.mean(v_list, axis=0)
     x_opt = np.clip(v_mean, -b, b)

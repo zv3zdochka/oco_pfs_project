@@ -7,7 +7,6 @@ import numpy as np
 import csv
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, field
 
 
 class MetricsLogger:
@@ -25,7 +24,7 @@ class MetricsLogger:
         Args:
             benchmark: Benchmark name
             output_dir: Directory for streaming output (if None, stores in memory)
-            step_subsample: Log every N-th step (1 = log all, 10 = every 10th, etc.)
+            step_subsample: Log every N-th step (1 = log all, 100 = every 100th, etc.)
         """
         self.benchmark = benchmark
         self.output_dir = output_dir
@@ -54,8 +53,10 @@ class MetricsLogger:
                  cum_loss: float, cum_viol: float):
         """Log metrics for a single step (with optional subsampling)."""
 
-        # Subsample: only log every N-th step, but always log first and last
-        if t % self.step_subsample != 0 and t != 1 and t != T:
+        # Subsample: log every N-th step, plus first and last
+        should_log = (t == 1) or (t == T) or (t % self.step_subsample == 0)
+
+        if not should_log:
             return
 
         viol_t = max(g_t, 0.0)
@@ -111,7 +112,10 @@ class MetricsLogger:
             # Close file and read back
             self._step_file.close()
             self._step_file = None
-            return pd.read_csv(self.output_dir / "metrics_step.csv")
+            step_file_path = self.output_dir / "metrics_step.csv"
+            if step_file_path.exists():
+                return pd.read_csv(step_file_path)
+            return pd.DataFrame()
         else:
             return pd.DataFrame(self._step_data_memory)
 
@@ -147,4 +151,7 @@ class MetricsLogger:
             self._step_file = None
 
     def __del__(self):
-        self.finalize()
+        try:
+            self.finalize()
+        except:
+            pass

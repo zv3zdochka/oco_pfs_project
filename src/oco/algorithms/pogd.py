@@ -4,7 +4,7 @@ Classic baseline projecting onto the true feasible set X.
 """
 
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from .base import Algorithm
 
@@ -26,10 +26,13 @@ class POGDAlgorithm(Algorithm):
     def name(self) -> str:
         return "POGD"
 
-    def step(self) -> np.ndarray:
+    def step(self) -> Tuple[np.ndarray, float]:
         """Perform one POGD step."""
         self.t += 1
         x_t = self.x.copy()
+
+        # Query constraint at x_t - ONE query
+        g_t = self.problem.constraint(x_t)
 
         # Gradient step
         grad_f = self.problem.grad_loss(x_t)
@@ -38,4 +41,4 @@ class POGDAlgorithm(Algorithm):
         # Project onto true feasible set X
         self.x = self.problem.project_X(x_next)
 
-        return x_t
+        return x_t, g_t
