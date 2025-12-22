@@ -5,6 +5,7 @@ Usage: python -m oco.plot_results --input results/toy/<run_id>/
 Features:
 - Reads real optimal point from optimal_points.json
 - Exact every-Nth-step subsampling for trajectories
+- Improved logreg visualizations: average loss, relative gap
 """
 
 import argparse
@@ -32,6 +33,8 @@ MARKERS = {
     "POGD": "d"
 }
 
+ALGO_ORDER = ["PFS", "DPP", "DPP-T", "POGD"]
+
 
 def setup_plot_style():
     """Configure matplotlib style."""
@@ -46,14 +49,17 @@ def setup_plot_style():
     })
 
 
+def get_ordered_algos(available_algos):
+    """Return algorithms in consistent order."""
+    return [a for a in ALGO_ORDER if a in available_algos]
+
+
 def plot_regret_vs_T(agg_df: pd.DataFrame, output_path: Path):
     """Plot A1: Regret vs Horizon T."""
     setup_plot_style()
     fig, ax = plt.subplots()
 
-    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
-        if algo not in agg_df["algo"].values:
-            continue
+    for algo in get_ordered_algos(agg_df["algo"].unique()):
         algo_data = agg_df[agg_df["algo"] == algo]
         grouped = algo_data.groupby("T")["regret"].agg(["mean", "std"])
 
@@ -83,9 +89,7 @@ def plot_cumviol_vs_T(agg_df: pd.DataFrame, output_path: Path):
     setup_plot_style()
     fig, ax = plt.subplots()
 
-    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
-        if algo not in agg_df["algo"].values:
-            continue
+    for algo in get_ordered_algos(agg_df["algo"].unique()):
         algo_data = agg_df[agg_df["algo"] == algo]
         grouped = algo_data.groupby("T")["cum_viol"].agg(["mean", "std"])
 
@@ -120,9 +124,7 @@ def plot_instviol_vs_t(step_df: pd.DataFrame, output_path: Path, T_plot: Optiona
 
     data = step_df[step_df["T"] == T_plot]
 
-    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
-        if algo not in data["algo"].values:
-            continue
+    for algo in get_ordered_algos(data["algo"].unique()):
         algo_data = data[data["algo"] == algo]
         grouped = algo_data.groupby("t")["viol_t"].agg(["mean", "std"])
 
@@ -188,7 +190,7 @@ def plot_trajectory_2d(step_df: pd.DataFrame, output_path: Path,
             )
 
     # Plot trajectories with EXACT every-Nth-step subsampling
-    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
+    for algo in get_ordered_algos(trial_1["algo"].unique()):
         algo_data = trial_1[trial_1["algo"] == algo]
         if algo_data.empty or "x1" not in algo_data.columns:
             continue
@@ -222,17 +224,86 @@ def plot_trajectory_2d(step_df: pd.DataFrame, output_path: Path,
 
 
 def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path: Path):
-    """Generate plots for logreg benchmark."""
-    setup_plot_style()
-    T = step_df["T"].max()
-    data = step_df[step_df["T"] == T]
+    """
+    Generate plots for logreg benchmark.
 
-    # B1: Cumulative loss over time
+    Includes improved visualizations:
+    - Average loss (cum_loss / t) instead of raw cumulative
+    - Relative loss gap (cum_loss - min across algos)
+    """
+    setup_plot_style()
+    T = int(step_df["T"].max())
+    data = step_df[step_df["T"] == T].copy()
+
+    available_algos = get_ordered_algos(data["algo"].unique())
+
+    # =========================================================================
+    # B1: Average Loss (cum_loss / t) - MUCH more informative than raw cumulative
+    # =========================================================================
     fig, ax = plt.subplots()
 
-    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
-        if algo not in data["algo"].values:
+    for algo in available_algos:
+        algo_data = data[data["algo"] == algo].copy()
+
+        # Compute average loss per step
+        algo_data["avg_loss"] = algo_data["cum_loss"] / algo_data["t"]
+
+        grouped = algo_data.groupby("t")["avg_loss"].agg(["mean", "std"])
+
+        ax.plot(grouped.index, grouped["mean"], label=algo,
+                color=COLORS.get(algo, "gray"))
+        ax.fill_between(grouped.index,
+                       grouped["mean"] - grouped["std"],
+                       grouped["mean"] + grouped["std"],
+                       color=COLORS.get(algo, "gray"), alpha=0.2)
+
+    ax.set_xlabel("Step t")
+    ax.set_ylabel("Average Loss (cumulative / t)")
+    ax.set_title("Average Loss vs Step")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_path / "avgloss_vs_t.png", dpi=150)
+    plt.close()
+
+    # =========================================================================
+    # B2: Relative Loss Gap (cum_loss - min across algos at each t)
+    # Shows which algorithm is winning at each point in time
+    # =========================================================================
+    fig, ax = plt.subplots()
+
+    # First, compute mean cum_loss per algo per t
+    pivot_data = data.groupby(["algo", "t"])["cum_loss"].mean().unstack(level=0)
+
+    # Compute min across algos at each t
+    min_loss_per_t = pivot_data.min(axis=1)
+
+    for algo in available_algos:
+        if algo not in pivot_data.columns:
             continue
+
+        # Gap = algo's loss - min loss
+        gap = pivot_data[algo] - min_loss_per_t
+
+        ax.plot(gap.index, gap.values, label=algo,
+                color=COLORS.get(algo, "gray"))
+
+    ax.set_xlabel("Step t")
+    ax.set_ylabel("Loss Gap (vs best algorithm)")
+    ax.set_title("Relative Cumulative Loss Gap vs Step")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    ax.axhline(y=0, color='black', linestyle='--', alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_path / "loss_gap_vs_t.png", dpi=150)
+    plt.close()
+
+    # =========================================================================
+    # B3: Raw Cumulative Loss (keeping for completeness, but less useful)
+    # =========================================================================
+    fig, ax = plt.subplots()
+
+    for algo in available_algos:
         algo_data = data[data["algo"] == algo]
         grouped = algo_data.groupby("t")["cum_loss"].agg(["mean", "std"])
 
@@ -245,18 +316,18 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
 
     ax.set_xlabel("Step t")
     ax.set_ylabel("Cumulative Loss")
-    ax.set_title("Cumulative Loss vs Step")
+    ax.set_title("Cumulative Loss vs Step (raw)")
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(output_path / "cumloss_vs_t.png", dpi=150)
     plt.close()
 
-    # B2: Instantaneous violation
+    # =========================================================================
+    # B4: Instantaneous violation
+    # =========================================================================
     fig, ax = plt.subplots()
-    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
-        if algo not in data["algo"].values:
-            continue
+    for algo in available_algos:
         algo_data = data[data["algo"] == algo]
         grouped = algo_data.groupby("t")["viol_t"].agg(["mean", "std"])
 
@@ -276,11 +347,11 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
     plt.savefig(output_path / "instviol_vs_t.png", dpi=150)
     plt.close()
 
-    # B3: Cumulative violation
+    # =========================================================================
+    # B5: Cumulative violation
+    # =========================================================================
     fig, ax = plt.subplots()
-    for algo in ["PFS", "DPP", "DPP-T", "POGD"]:
-        if algo not in data["algo"].values:
-            continue
+    for algo in available_algos:
         algo_data = data[data["algo"] == algo]
         grouped = algo_data.groupby("t")["cum_viol"].agg(["mean", "std"])
 
@@ -300,27 +371,117 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
     plt.savefig(output_path / "cumviol_vs_t.png", dpi=150)
     plt.close()
 
-    # B4: Regret bar chart (final values)
+    # =========================================================================
+    # B6: Average Violation (cum_viol / t)
+    # =========================================================================
+    fig, ax = plt.subplots()
+
+    for algo in available_algos:
+        algo_data = data[data["algo"] == algo].copy()
+        algo_data["avg_viol"] = algo_data["cum_viol"] / algo_data["t"]
+
+        grouped = algo_data.groupby("t")["avg_viol"].agg(["mean", "std"])
+
+        ax.plot(grouped.index, grouped["mean"], label=algo,
+                color=COLORS.get(algo, "gray"))
+        ax.fill_between(grouped.index,
+                       np.maximum(grouped["mean"] - grouped["std"], 0),
+                       grouped["mean"] + grouped["std"],
+                       color=COLORS.get(algo, "gray"), alpha=0.2)
+
+    ax.set_xlabel("Step t")
+    ax.set_ylabel("Average Violation (cumulative / t)")
+    ax.set_title("Average Violation vs Step")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_path / "avgviol_vs_t.png", dpi=150)
+    plt.close()
+
+    # =========================================================================
+    # B7: Final Regret bar chart
+    # =========================================================================
     fig, ax = plt.subplots(figsize=(8, 5))
     summary = agg_df.groupby("algo")["regret"].agg(["mean", "std"])
 
     # Order algorithms consistently
-    algo_order = [a for a in ["PFS", "DPP", "DPP-T", "POGD"] if a in summary.index]
-    summary = summary.loc[algo_order]
+    algo_order = [a for a in ALGO_ORDER if a in summary.index]
+    if algo_order:
+        summary = summary.loc[algo_order]
+        x_pos = np.arange(len(algo_order))
 
-    x_pos = np.arange(len(algo_order))
+        bars = ax.bar(x_pos, summary["mean"], yerr=summary["std"],
+                      color=[COLORS.get(a, "gray") for a in algo_order],
+                      capsize=5, alpha=0.8)
 
-    bars = ax.bar(x_pos, summary["mean"], yerr=summary["std"],
-                  color=[COLORS.get(a, "gray") for a in algo_order],
-                  capsize=5, alpha=0.8)
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(algo_order)
+        ax.set_ylabel("Final Regret")
+        ax.set_title(f"Final Regret Comparison (T={T})")
+        ax.grid(True, alpha=0.3, axis='y')
+        plt.tight_layout()
+        plt.savefig(output_path / "regret_comparison.png", dpi=150)
+        plt.close()
 
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(algo_order)
-    ax.set_ylabel("Final Regret")
-    ax.set_title(f"Final Regret Comparison (T={int(T)})")
-    ax.grid(True, alpha=0.3, axis='y')
+    # =========================================================================
+    # B8: Final Cumulative Violation bar chart
+    # =========================================================================
+    fig, ax = plt.subplots(figsize=(8, 5))
+    summary_viol = agg_df.groupby("algo")["cum_viol"].agg(["mean", "std"])
+
+    algo_order = [a for a in ALGO_ORDER if a in summary_viol.index]
+    if algo_order:
+        summary_viol = summary_viol.loc[algo_order]
+        x_pos = np.arange(len(algo_order))
+
+        bars = ax.bar(x_pos, summary_viol["mean"], yerr=summary_viol["std"],
+                      color=[COLORS.get(a, "gray") for a in algo_order],
+                      capsize=5, alpha=0.8)
+
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(algo_order)
+        ax.set_ylabel("Final Cumulative Violation")
+        ax.set_title(f"Final Cumulative Violation Comparison (T={T})")
+        ax.grid(True, alpha=0.3, axis='y')
+        plt.tight_layout()
+        plt.savefig(output_path / "cumviol_comparison.png", dpi=150)
+        plt.close()
+
+    # =========================================================================
+    # B9: Summary table as image
+    # =========================================================================
+    fig, ax = plt.subplots(figsize=(10, 3))
+    ax.axis('off')
+
+    summary_all = agg_df.groupby("algo").agg({
+        "regret": ["mean", "std"],
+        "cum_viol": ["mean", "std"],
+        "max_viol": ["mean", "std"]
+    }).round(2)
+
+    # Flatten columns
+    summary_all.columns = [f"{col[0]}_{col[1]}" for col in summary_all.columns]
+    summary_all = summary_all.reset_index()
+
+    # Reorder
+    algo_order = [a for a in ALGO_ORDER if a in summary_all["algo"].values]
+    summary_all = summary_all.set_index("algo").loc[algo_order].reset_index()
+
+    table = ax.table(
+        cellText=summary_all.values,
+        colLabels=summary_all.columns,
+        cellLoc='center',
+        loc='center',
+        colColours=['lightgray'] * len(summary_all.columns)
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 1.5)
+
+    ax.set_title(f"Summary Statistics (T={T})", fontsize=14, fontweight='bold', pad=20)
+
     plt.tight_layout()
-    plt.savefig(output_path / "regret_comparison.png", dpi=150)
+    plt.savefig(output_path / "summary_table.png", dpi=150, bbox_inches='tight')
     plt.close()
 
 
@@ -361,9 +522,10 @@ def generate_all_plots(output_dir: Path, config: Dict[str, Any]):
             plot_logreg_metrics(step_df, agg_df, output_dir)
         else:
             # At least plot regret comparison from aggregates
+            setup_plot_style()
             fig, ax = plt.subplots(figsize=(8, 5))
             summary = agg_df.groupby("algo")["regret"].agg(["mean", "std"])
-            algo_order = [a for a in ["PFS", "DPP", "DPP-T", "POGD"] if a in summary.index]
+            algo_order = [a for a in ALGO_ORDER if a in summary.index]
             if algo_order:
                 summary = summary.loc[algo_order]
                 x_pos = np.arange(len(algo_order))
