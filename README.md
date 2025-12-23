@@ -1,216 +1,230 @@
-# Constrained Online Convex Optimization (OCO) with constraints
-
-## PFS (Polyak Feasibility Steps) vs baseline algorithms (POGD, DPP, DPP-T)
+# Constrained Online Convex Optimization (OCO)  
+## PFS (Polyak Feasibility Steps) vs Baseline Algorithms (POGD, DPP, DPP-T)
 
 This repository is a reproducible testbed for comparing online convex optimization algorithms **with constraints** in the *constrained OCO* setting on two benchmarks:
-
-1. a synthetic quadratic task (Toy Quadratic),
-2. online logistic regression with a norm constraint (Online Logistic Regression).
+1) Synthetic quadratic problem (Toy Quadratic),  
+2) Online logistic regression with norm constraint (Online Logistic Regression).
 
 The key idea is to compare:
-
-* **POGD**: the classical projected method (with projection onto the truly feasible set $X$),
-* **DPP**: the primal–dual **Drift-Plus-Penalty** approach with a virtual queue,
-* **DPP-T**: DPP with **tightening** (a strengthened constraint),
-* **PFS**: OGD + **Polyak Feasibility Steps** (in the style of the 2025 paper), where the constraint is controlled via a “Polyak step” with one constraint check per round.
+- **POGD**: classical projected gradient descent (with projection onto the true feasible set $X$),
+- **DPP**: primal–dual **Drift-Plus-Penalty** approach with a virtual queue,
+- **DPP-T**: DPP with **tightening** (strengthened constraint),
+- **PFS**: OGD + **Polyak Feasibility Steps** (in the style of the 2025 paper), where the constraint is controlled by a "Polyak step" with one constraint query per round.
 
 ---
 
-## 1. Problem statement (constrained OCO)
+## 1. Problem Statement (Constrained OCO)
 
-At each step $t=1,\dots,T$ the algorithm chooses a decision $x_t \in X_0$ (a simple set onto which it is easy to project). Then a convex loss $f_t(x_t)$ is incurred and the constraint violation $g(x_t)$ is measured, where the feasible region is defined as:
+At each step $t=1,\dots,T$, the algorithm chooses a solution $x_t \in X_0$ (a simple set onto which projection is easy). Then a convex loss $f_t(x_t)$ is incurred and the constraint violation $g(x_t)$ is measured, where the feasible region is defined as:
 
-$$
-X ;=;{x \in X_0:; g(x)\le 0}.
-$$
+```math
+X = \{x \in X_0 : g(x) \le 0\}
+```
 
-### Quality metrics
+### Performance Metrics
 
-**Regret** with respect to the best fixed decision from the feasible region:
-$$
-\mathrm{Regret}*T ;=; \sum*{t=1}^T f_t(x_t);-;\min_{x\in X}\sum_{t=1}^T f_t(x).
-$$
+**Regret** relative to the best fixed solution from the feasible region:
 
-In the code, the baseline $\min_{x\in X}\sum_{t=1}^T f_t(x)$ is computed via **batch optimization** (a separate solver) for an honest regret calculation.
+```math
+\mathrm{Regret}_T = \sum_{t=1}^T f_t(x_t) - \min_{x \in X} \sum_{t=1}^T f_t(x)
+```
 
-### Constraint satisfaction metrics
+In the code, the baseline $\min_{x \in X} \sum_{t=1}^T f_t(x)$ is computed via **batch optimization** (a separate solver) for fair regret computation.
+
+### Constraint Satisfaction Metrics
 
 Instantaneous violation:
-$$
-\mathrm{viol}*t ;=;[g(x_t)]*+ ;=;\max(g(x_t),0).
-$$
+
+```math
+\mathrm{viol}_t = [g(x_t)]_+ = \max(g(x_t), 0)
+```
 
 Cumulative violation:
-$$
-\mathrm{CumViol}*T ;=;\sum*{t=1}^T [g(x_t)]_+.
-$$
+
+```math
+\mathrm{CumViol}_T = \sum_{t=1}^T [g(x_t)]_+
+```
 
 Maximum violation:
-$$
-\mathrm{MaxViol}*T ;=;\max*{t\le T}[g(x_t)]_+.
-$$
+
+```math
+\mathrm{MaxViol}_T = \max_{t \le T} [g(x_t)]_+
+```
 
 ---
 
-## 2. Implemented algorithms
+## 2. Implemented Algorithms
 
-All algorithms satisfy the engineering requirement of the experiment: **one constraint check per round** (in the code this is implemented by having `algo.step()` return $(x_t, g_t)$, and $g_t=g(x_t)$ is queried exactly once). For PFS/DPP, the constraint subgradient $u_t \in \partial g(x_t)$ is also used; within the access model it is assumed to be available together with the constraint query.
+All algorithms satisfy the engineering requirement of the experiment: **one constraint query per round** (in the code this is implemented by having `algo.step()` return $(x_t, g_t)$, where $g_t = g(x_t)$ is queried exactly once). For PFS/DPP, the subgradient of the constraint $u_t \in \partial g(x_t)$ is also used; within the access model, it is assumed to be available together with the constraint query.
 
 ### 2.1 POGD — Projected Online Gradient Descent
 
-Classic projection onto the truly feasible set $X$:
+Classical projection onto the true feasible set $X$:
 
-$$
-x_{t+1} ;=; \Pi_X\Bigl(x_t - \eta \nabla f_t(x_t)\Bigr),
-\qquad \eta=\frac{\eta_{\mathrm{const}}}{\sqrt{T}}.
-$$
+```math
+x_{t+1} = \Pi_X\left(x_t - \eta \nabla f_t(x_t)\right), \quad \eta = \frac{\eta_{\mathrm{const}}}{\sqrt{T}}
+```
 
-**Strength:** almost always the best regret if projection onto $X$ is cheap.
+**Strength:** almost always the best regret if projection onto $X$ is cheap.  
 **Weakness:** in general, projection onto $X$ can be computationally expensive/unknown.
 
 ---
 
 ### 2.2 DPP — Drift-Plus-Penalty (Yu et al., 2017)
 
-A primal–dual method with a virtual queue $Q_t\ge 0$ to control the constraint:
+Primal–dual method with a virtual queue $Q_t \ge 0$ for constraint control:
 
-1. gradients at point $x_t$:
+1) Gradients at point $x_t$:  
+   - $\nabla f_t(x_t)$  
+   - $g_t = g(x_t)$  
+   - $u_t \in \partial g(x_t)$
 
-* $\nabla f_t(x_t)$
-* $g_t=g(x_t)$
-* $u_t \in \partial g(x_t)$
+2) Primal step (projection only onto the simple set $X_0$):
 
-2. primal step (projection only onto the simple set $X_0$):
-   $$
-   d_t ;=; V\nabla f_t(x_t) + Q_t u_t,
-   $$
-   $$
-   x_{t+1};=;\Pi_{X_0}\Bigl(x_t-\frac{d_t}{2\alpha}\Bigr).
-   $$
+```math
+d_t = V \nabla f_t(x_t) + Q_t u_t
+```
 
-3. queue update:
-   $$
-   Q_{t+1} ;=;\max\Bigl(Q_t + g(x_t) + u_t^\top(x_{t+1}-x_t),;0\Bigr).
-   $$
+```math
+x_{t+1} = \Pi_{X_0}\left(x_t - \frac{d_t}{2\alpha}\right)
+```
 
-In the code, parameters use the classic scaling:
-$$
-\alpha = T,\qquad V=\sqrt{T}.
-$$
+3) Queue update:
 
----
+```math
+Q_{t+1} = \max\left(Q_t + g(x_t) + u_t^\top (x_{t+1} - x_t), 0\right)
+```
 
-### 2.3 DPP-T — DPP with tightened constraint
+The code uses parameters according to the classical scaling:
 
-Same as DPP, but the queue is updated using a **strengthened** constraint:
-$$
-g_\rho(x) ;=; g(x)+\rho,
-$$
-where tightening is chosen as
-$$
-\rho(T);=;\min\Bigl(\varepsilon,\sqrt{\tfrac{c}{T}}\Bigr).
-$$
-
-Intuition: tightening should reduce the real violation $g(x)$, but the cost is often worse regret.
+```math
+\alpha = T, \quad V = \sqrt{T}
+```
 
 ---
 
-### 2.4 PFS — OGD + Polyak Feasibility Steps (2025-paper style)
+### 2.3 DPP-T — DPP with Tightened Constraint
+
+Same as DPP, but the queue is updated using the **tightened** constraint:
+
+```math
+g_\rho(x) = g(x) + \rho
+```
+
+where tightening is taken as
+
+```math
+\rho(T) = \min\left(\varepsilon, \sqrt{\frac{c}{T}}\right)
+```
+
+Intuition: tightening should reduce the actual violation $g(x)$, but the cost is often worse regret.
+
+---
+
+### 2.4 PFS — OGD + Polyak Feasibility Steps (2025 Paper Style)
 
 The step consists of two parts:
 
-1. **gradient step on the loss**:
-   $$
-   y_t ;=; x_t - \eta \nabla f_t(x_t).
-   $$
+1) **Gradient step on loss**:
 
-2. **Polyak feasibility step** for the linear approximation of the constraint at $x_t$:
-   let $g_t=g(x_t)$ and $s_t\in\partial g(x_t)$. Consider the linear model at $x_t$:
-   $$
-   \ell_t(y);=;g_t + s_t^\top(y-x_t) + \rho.
-   $$
-   If $\ell_t(y_t)>0$, we perform a “Polyak step”:
-   $$
-   y_t \leftarrow y_t - \frac{\ell_t(y_t)}{|s_t|^2},s_t.
-   $$
+```math
+y_t = x_t - \eta \nabla f_t(x_t)
+```
 
-3. projection onto the simple set $X_0$:
-   $$
-   x_{t+1}=\Pi_{X_0}(y_t).
-   $$
+2) **Polyak feasibility step** on the linear approximation of the constraint at point $x_t$:
+   let $g_t = g(x_t)$ and $s_t \in \partial g(x_t)$. Consider the linear model at point $x_t$:
 
-In the code, tightening is:
-$$
-\rho(T)=\min\Bigl(\varepsilon,\sqrt{\tfrac{\alpha}{T}}\Bigr),
-\qquad \alpha=\varepsilon,
-$$
-and the step size is:
+```math
+\ell_t(y) = g_t + s_t^\top (y - x_t) + \rho
+```
 
-* either $\eta=\dfrac{\eta_{\mathrm{const}}}{\sqrt{T}}$ (if specified in the config),
-* or by default $\eta=\dfrac{\rho}{2\sqrt{2}}$ (as a convenient scale for the toy task).
+If $\ell_t(y_t) > 0$, perform a "Polyak step":
+
+```math
+y_t \leftarrow y_t - \frac{\ell_t(y_t)}{\|s_t\|^2} s_t
+```
+
+3) Projection onto the simple set $X_0$:
+
+```math
+x_{t+1} = \Pi_{X_0}(y_t)
+```
+
+In the code, tightening:
+
+```math
+\rho(T) = \min\left(\varepsilon, \sqrt{\frac{\alpha}{T}}\right), \quad \alpha = \varepsilon
+```
+
+and the step size:
+- either $\eta = \dfrac{\eta_{\mathrm{const}}}{\sqrt{T}}$ (if specified in config),
+- or by default $\eta = \dfrac{\rho}{2\sqrt{2}}$ (as a convenient scale for the toy problem).
 
 ---
 
-## 3. Benchmarks (tasks)
+## 3. Benchmarks (Problems)
 
 ### 3.1 Toy Quadratic (Benchmark A)
 
 Losses:
-$$
-f_t(x)=3|x-v_t|_2^2,\qquad v_t\sim \mathrm{Unif}([0,1]^d).
-$$
+
+```math
+f_t(x) = 3\|x - v_t\|_2^2, \quad v_t \sim \mathrm{Unif}([0,1]^d)
+```
 
 Simple set:
-$$
-X_0 = B(R)={x:|x|_2\le R}.
-$$
+
+```math
+X_0 = B(R) = \{x : \|x\|_2 \le R\}
+```
 
 Constraint and feasible set:
-$$
-g(x)=|x|*\infty - b,\qquad
-X={x:|x|*\infty\le b}=[-b,b]^d.
-$$
+
+```math
+g(x) = \|x\|_\infty - b, \quad X = \{x : \|x\|_\infty \le b\} = [-b, b]^d
+```
 
 ---
 
 ### 3.2 Online Logistic Regression (Benchmark B)
 
 Losses (logistic):
-$$
-f_t(w)=\log\bigl(1+\exp(-y_t,w^\top x_t)\bigr),\qquad y_t\in{-1,+1}.
-$$
+
+```math
+f_t(w) = \log\left(1 + \exp(-y_t \cdot w^\top x_t)\right), \quad y_t \in \{-1, +1\}
+```
 
 Data generation:
-
-* $x_t\sim\mathcal N(0,I)$,
-* a hidden vector $w^\star$ is fixed with $\lVert w^\star\rVert_2 = 1$,
-* then $y_t = +1$ with probability $\sigma!\left((w^\star)^\top x_t\right)$, otherwise $-1$.
+- $x_t \sim \mathcal{N}(0, I)$,
+- a hidden vector $w^\star$ with $\|w^\star\|_2 = 1$ is fixed,
+- then $y_t = +1$ with probability $\sigma\left((w^\star)^\top x_t\right)$, otherwise $-1$.
 
 Simple set:
-$$
-X_0=B(R_0)={w:|w|_2\le R_0}.
-$$
+
+```math
+X_0 = B(R_0) = \{w : \|w\|_2 \le R_0\}
+```
 
 Constraint and feasible set:
-$$
-g(w)=|w|_2 - B,\qquad X=B(B)={w:|w|_2\le B}.
-$$
+
+```math
+g(w) = \|w\|_2 - B, \quad X = B(B) = \{w : \|w\|_2 \le B\}
+```
 
 ---
 
-## 4. How to run
+## 4. How to Run
 
-### 4.1 Install dependencies
+### 4.1 Installing Dependencies
 
 Option via `requirements.txt`:
-
 ```bash
 python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 ```
 
-Or via `pyproject.toml` (if you prefer a PEP-517/518 environment):
+Or via `pyproject.toml` (if you prefer PEP-517/518 environment):
 
 ```bash
 pip install -e .
@@ -218,7 +232,7 @@ pip install -e .
 
 ---
 
-### 4.2 Run an experiment
+### 4.2 Running an Experiment
 
 Run via module:
 
@@ -235,24 +249,24 @@ oco-run --config configs/logreg.yaml
 ```
 
 **Where results are saved:**
-after running, a folder of the form is created:
+after running, a folder is created of the form:
 
 ```
 results/<benchmark>/<YYYYMMDD_HHMMSS>/
 ```
 
-It contains:
+The following is saved there:
 
-* `config_resolved.yaml` — the resolved config,
-* `metrics_step.csv` — per-step metrics (with subsampling for large T),
-* `metrics_agg.csv` — aggregates per trial,
-* `metrics_summary.csv` — mean/std over trials,
-* `optimal_points.json` — batch-optimum points (for trajectories),
-* a set of `.png` plots (if plotting is enabled).
+* `config_resolved.yaml` — the fixed config,
+* `metrics_step.csv` — step-by-step metrics (with subsampling for large T),
+* `metrics_agg.csv` — aggregates for each trial,
+* `metrics_summary.csv` — mean/std across trials,
+* `optimal_points.json` — batch optimum points (for trajectories),
+* a set of `.png` plots (if plotting is run).
 
 ---
 
-### 4.3 Plot results
+### 4.3 Generating Plots from Results
 
 ```bash
 python -m oco.plot_results --input results/toy/<TIMESTAMP>
@@ -268,9 +282,9 @@ oco-plot --input results/logreg/<TIMESTAMP>
 
 ---
 
-## 5. Configs and hyperparameters
+## 5. Configs and Hyperparameters
 
-Configs are in `configs/`.
+Configs are located in `configs/`.
 
 ### `configs/toy.yaml` (Toy Quadratic)
 
@@ -280,7 +294,7 @@ Configs are in `configs/`.
 * algorithms:
 
   * `PFS.epsilon`
-  * `DPP` (no parameters, uses $\alpha=T$, $V=\sqrt{T}$)
+  * `DPP` (no parameters, uses $\alpha = T$, $V = \sqrt{T}$)
   * `DPP-T.epsilon`, `DPP-T.c`
   * `POGD.eta_const`
 
@@ -288,7 +302,7 @@ Configs are in `configs/`.
 
 * `problem.d`, `problem.R0`, `problem.B`, `problem.w_star_seed`
 * `experiment.horizons` (default `[50000]`)
-* `batch_solver.*` — batch-solver parameters for the regret baseline
+* `batch_solver.*` — batch solver parameters for regret baseline
 * algorithms:
 
   * `PFS.epsilon`, `PFS.eta_const`
@@ -298,7 +312,7 @@ Configs are in `configs/`.
 
 ---
 
-## 6. Project structure
+## 6. Project Structure
 
 ```
 configs/
@@ -306,8 +320,8 @@ configs/
   logreg.yaml
 
 src/oco/
-  run_experiment.py        # runs experiments and logs metrics
-  plot_results.py          # generates plots from a results folder
+  run_experiment.py        # running experiments and logging metrics
+  plot_results.py          # generating plots from results folder
 
   algorithms/
     base.py                # common Algorithm interface
@@ -324,19 +338,19 @@ src/oco/
     logging.py             # MetricsLogger (step/agg/summary)
     projections.py         # project_ball, project_box
     subgradients.py        # norm subgradients
-    batch_opt.py           # batch solvers for the regret baseline
+    batch_opt.py           # batch solvers for regret baseline
     seeding.py             # seeding/reproducibility
 
 src/results/
-  ...                      # example already-generated results (see below)
+  ...                      # example of already generated results (see below)
 ```
 
 ---
 
-## 7. Example results
+## 7. Example Results
 
-Below are example plots from the `src/results/` folder (these are **demo artifacts**, so the README is self-contained).
-In your runs, similar files will appear in `results/...`.
+Below are example plots from the `src/results/` folder (these are **demo artifacts** to make the README self-contained).
+When you run experiments, similar files will appear in `results/...`.
 
 ---
 
@@ -344,36 +358,36 @@ In your runs, similar files will appear in `results/...`.
 
 #### Regret vs Horizon
 
-The plot shows the typical behavior:
+The plot shows typical behavior:
 
-* **POGD** (projection onto $X$ is cheap — box) yields the smallest regret,
-* **PFS** is very close to POGD,
+* **POGD** (projection onto $X$ is cheap — box) gives the minimum regret,
+* **PFS** follows very close to POGD,
 * **DPP** is slightly worse in regret,
-* **DPP-T** loses noticeably in regret due to tightening.
+* **DPP-T** noticeably loses in regret due to tightening.
 
 ![Toy: Regret vs T](src/results/toy/regret_vs_T.png)
 
-#### Cumulative constraint violation
+#### Cumulative Constraint Violation
 
-* **POGD** and **PFS** practically do not violate the constraint (line at zero),
+* **POGD** and **PFS** almost never violate the constraint (line at zero),
 * **DPP** has substantial accumulated violation,
-* **DPP-T** reduces violation compared to DPP, but does not make it zero.
+* **DPP-T** reduces violation compared to DPP, but doesn't make it zero.
 
 ![Toy: Cumulative violation vs T](src/results/toy/cumviol_vs_T.png)
 
-#### Instantaneous violation (T=20000)
+#### Instantaneous Violation (T=20000)
 
-The difference in “operating regime” is clearly visible:
+The difference in "operating mode" is clearly visible:
 
-* for **DPP** the violation stays at a nonzero level for almost the whole horizon,
-* for **DPP-T** the violation is much lower and closer to zero,
-* for **POGD/PFS** the violation is almost zero.
+* **DPP** violation stays at a non-zero level for almost the entire horizon,
+* **DPP-T** violation is substantially lower and closer to zero,
+* **POGD/PFS** violation is practically zero.
 
 ![Toy: Instantaneous violation](src/results/toy/instviol_vs_t_T20000.png)
 
 #### Trajectories (2D)
 
-On the toy task it is convenient to visually compare how algorithms “approach” the optimum and how often they go outside the feasible box.
+On the toy problem, it's convenient to visually compare how algorithms "approach" the optimum and how often they exit the feasible box.
 
 ![Toy: Trajectories](src/results/toy/trajectory_2d.png)
 
@@ -381,41 +395,41 @@ On the toy task it is convenient to visually compare how algorithms “approach�
 
 ### 7.2 Online Logistic Regression (`src/results/logreg/20251223_171211/`)
 
-#### Final regret (T=50000)
+#### Final Regret (T=50000)
 
 For this run:
 
-* **DPP** achieves the best regret,
+* best regret is shown by **DPP**,
 * **POGD** is close to it,
-* **PFS** is worse in regret, but achieves zero violation,
+* **PFS** is worse in regret, but ensures zero violation,
 * **DPP-T** loses substantially in regret.
 
 ![LogReg: Final regret comparison](src/results/logreg/regret_comparison.png)
 
-#### Final cumulative violation (T=50000)
+#### Final Cumulative Violation (T=50000)
 
-* **POGD** — strictly within $X$ (zero violation, since projection is onto $X=B(B)$),
-* **PFS** — in this run also yields zero violation,
+* **POGD** — strictly in $X$ (zero violation, since projection onto $X = B(B)$),
+* **PFS** — in this run also gives zero violation,
 * **DPP** accumulates large violation,
-* **DPP-T** reduces violation compared to DPP, but does not eliminate it.
+* **DPP-T** reduces violation compared to DPP, but doesn't eliminate it.
 
 ![LogReg: Final cumulative violation](src/results/logreg/cumviol_comparison.png)
 
-#### Instantaneous violation over steps
+#### Instantaneous Violation vs Steps
 
-The plot highlights that for DPP/DPP-T the violation “pulses” and does not disappear, whereas POGD/PFS stay at zero.
+The plot emphasizes that DPP/DPP-T violation "pulsates" and doesn't disappear, while POGD/PFS stay at zero.
 
 ![LogReg: Instantaneous violation vs step](src/results/logreg/instviol_vs_t.png)
 
-#### Relative cumulative loss gap (vs the best algorithm)
+#### Relative Gap in Cumulative Loss (vs Best Algorithm)
 
-In this run DPP is the best in cumulative loss (hence its line is near 0), while DPP-T accumulates a large gap.
+In this run, DPP is the best in cumulative loss (so its line is around 0), while DPP-T accumulates a large gap.
 
 ![LogReg: Relative cumulative loss gap](src/results/logreg/loss_gap_vs_t.png)
 
-#### Summary table (mean/std over trials, T=50000)
+#### Summary Table (mean/std across trials, T=50000)
 
-(The table below is an exact transcription of the image `summary_table.png`.)
+(The table below is the exact transcription of the `summary_table.png` image.)
 
 |  algo | regret_mean | regret_std | cum_viol_mean | cum_viol_std | max_viol_mean | max_viol_std |
 | ----: | ----------: | ---------: | ------------: | -----------: | ------------: | -----------: |
@@ -424,20 +438,17 @@ In this run DPP is the best in cumulative loss (hence its line is near 0), while
 | DPP-T |      243.76 |       5.79 |        174.14 |        47.47 |          0.05 |         0.01 |
 |  POGD |      178.86 |       5.56 |          0.00 |         0.00 |          0.00 |         0.00 |
 
-And the original image:
-
-![LogReg: Summary table](src/results/logreg/summary_table.png)
 
 ---
 
-## 8. Interpretation of the observed trade-off
+## 8. Interpretation of the Observed Trade-off
 
-The practical picture (across the two benchmarks) fits the expected **trade-off**:
+The practical picture (across both benchmarks) fits the expected **trade-off**:
 
-* **When projection onto the truly feasible set $X$ is cheap** (toy task, $X$ is a box), **POGD** often becomes the strongest reference in regret and does not violate the constraint.
+* **When projection onto the true feasible $X$ is cheap** (toy problem, $X$ — box), **POGD** often becomes the strongest benchmark in regret while not violating the constraint.
 
-* **PFS** aims to approach the quality of POGD, while staying in the regime “simple projection onto $X_0$ + one constraint check”. On the toy task it is indeed close to POGD in regret and does not violate the constraint in practice.
+* **PFS** aims to approach POGD quality while staying in the "simple projection onto $X_0$ + one constraint query" mode. On the toy problem, it is indeed close to POGD in regret and doesn't violate the constraint in practice.
 
-* **DPP** and **DPP-T** exhibit the characteristic primal–dual behavior: you can win in regret (or be competitive), but the price is noticeable accumulated violation (especially for DPP). Tightening (DPP-T) reduces violation, but usually worsens regret.
+* **DPP** and **DPP-T** demonstrate characteristic primal–dual behavior: one can win in regret (or be competitive), but the price is noticeable accumulated violation (especially for DPP). Tightening (DPP-T) reduces violation but usually worsens regret.
 
 ---

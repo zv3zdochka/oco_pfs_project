@@ -1,4 +1,3 @@
-
 # Constrained Online Convex Optimization (OCO) с ограничениями  
 ## PFS (Polyak Feasibility Steps) vs базовые алгоритмы (POGD, DPP, DPP-T)
 
@@ -18,50 +17,53 @@
 
 На каждом шаге $t=1,\dots,T$ алгоритм выбирает решение $x_t \in X_0$ (простое множество, на которое легко проектировать). Затем начисляется выпуклая потеря $f_t(x_t)$ и измеряется нарушение ограничения $g(x_t)$, где допустимая область задаётся как:
 
-$$
-X \;=\;\{x \in X_0:\; g(x)\le 0\}.
-$$
+```math
+X = \{x \in X_0 : g(x) \le 0\}
+```
 
 ### Метрики качества
 
 **Regret** относительно лучшего фиксированного решения из допустимой области:
-$$
-\mathrm{Regret}_T \;=\; \sum_{t=1}^T f_t(x_t)\;-\;\min_{x\in X}\sum_{t=1}^T f_t(x).
-$$
 
-В коде baseline $\min_{x\in X}\sum_{t=1}^T f_t(x)$ вычисляется через **batch-оптимизацию** (отдельный солвер) для честного подсчёта regret.
+```math
+\mathrm{Regret}_T = \sum_{t=1}^T f_t(x_t) - \min_{x \in X} \sum_{t=1}^T f_t(x)
+```
+
+В коде baseline $\min_{x \in X} \sum_{t=1}^T f_t(x)$ вычисляется через **batch-оптимизацию** (отдельный солвер) для честного подсчёта regret.
 
 ### Метрики соблюдения ограничения
 
 Мгновенное нарушение:
-$$
-\mathrm{viol}_t \;=\;[g(x_t)]_+ \;=\;\max(g(x_t),0).
-$$
+
+```math
+\mathrm{viol}_t = [g(x_t)]_+ = \max(g(x_t), 0)
+```
 
 Кумулятивное нарушение:
-$$
-\mathrm{CumViol}_T \;=\;\sum_{t=1}^T [g(x_t)]_+.
-$$
+
+```math
+\mathrm{CumViol}_T = \sum_{t=1}^T [g(x_t)]_+
+```
 
 Максимальное нарушение:
-$$
-\mathrm{MaxViol}_T \;=\;\max_{t\le T}[g(x_t)]_+.
-$$
+
+```math
+\mathrm{MaxViol}_T = \max_{t \le T} [g(x_t)]_+
+```
 
 ---
 
 ## 2. Реализованные алгоритмы
 
-Во всех алгоритмах соблюдается инженерное требование эксперимента: **одна проверка ограничения на раунд** (в коде это реализовано тем, что `algo.step()` возвращает $(x_t, g_t)$, а $g_t=g(x_t)$ запрашивается ровно один раз). Для PFS/DPP также используется субградиент ограничения $u_t \in \partial g(x_t)$; в рамках модели доступа считается, что он доступен вместе с запросом ограничения.
+Во всех алгоритмах соблюдается инженерное требование эксперимента: **одна проверка ограничения на раунд** (в коде это реализовано тем, что `algo.step()` возвращает $(x_t, g_t)$, а $g_t = g(x_t)$ запрашивается ровно один раз). Для PFS/DPP также используется субградиент ограничения $u_t \in \partial g(x_t)$; в рамках модели доступа считается, что он доступен вместе с запросом ограничения.
 
 ### 2.1 POGD — Projected Online Gradient Descent
 
 Классическая проекция на истинное допустимое множество $X$:
 
-$$
-x_{t+1} \;=\; \Pi_X\Bigl(x_t - \eta \nabla f_t(x_t)\Bigr), 
-\qquad \eta=\frac{\eta_{\mathrm{const}}}{\sqrt{T}}.
-$$
+```math
+x_{t+1} = \Pi_X\left(x_t - \eta \nabla f_t(x_t)\right), \quad \eta = \frac{\eta_{\mathrm{const}}}{\sqrt{T}}
+```
 
 **Сильная сторона:** почти всегда лучший regret, если проекция на $X$ дешёвая.  
 **Слабая сторона:** в общем случае проекция на $X$ может быть вычислительно тяжёлой/неизвестной.
@@ -70,43 +72,50 @@ $$
 
 ### 2.2 DPP — Drift-Plus-Penalty (Yu et al., 2017)
 
-Primal–dual метод с виртуальной очередью $Q_t\ge 0$ для контроля ограничения:
+Primal–dual метод с виртуальной очередью $Q_t \ge 0$ для контроля ограничения:
 
 1) градиенты в точке $x_t$:  
-- $\nabla f_t(x_t)$  
-- $g_t=g(x_t)$  
-- $u_t \in \partial g(x_t)$
+   - $\nabla f_t(x_t)$  
+   - $g_t = g(x_t)$  
+   - $u_t \in \partial g(x_t)$
 
 2) primal-шаг (проекция только на простое множество $X_0$):
-$$
-d_t \;=\; V\nabla f_t(x_t) + Q_t u_t,
-$$
-$$
-x_{t+1}\;=\;\Pi_{X_0}\Bigl(x_t-\frac{d_t}{2\alpha}\Bigr).
-$$
+
+```math
+d_t = V \nabla f_t(x_t) + Q_t u_t
+```
+
+```math
+x_{t+1} = \Pi_{X_0}\left(x_t - \frac{d_t}{2\alpha}\right)
+```
 
 3) обновление очереди:
-$$
-Q_{t+1} \;=\;\max\Bigl(Q_t + g(x_t) + u_t^\top(x_{t+1}-x_t),\;0\Bigr).
-$$
+
+```math
+Q_{t+1} = \max\left(Q_t + g(x_t) + u_t^\top (x_{t+1} - x_t), 0\right)
+```
 
 В коде используются параметры по классическому масштабу:
-$$
-\alpha = T,\qquad V=\sqrt{T}.
-$$
+
+```math
+\alpha = T, \quad V = \sqrt{T}
+```
 
 ---
 
 ### 2.3 DPP-T — DPP с tightened constraint
 
 То же, что DPP, но очередь обновляется по **усиленному** ограничению:
-$$
-g_\rho(x) \;=\; g(x)+\rho,
-$$
+
+```math
+g_\rho(x) = g(x) + \rho
+```
+
 где tightening берётся как
-$$
-\rho(T)\;=\;\min\Bigl(\varepsilon,\sqrt{\tfrac{c}{T}}\Bigr).
-$$
+
+```math
+\rho(T) = \min\left(\varepsilon, \sqrt{\frac{c}{T}}\right)
+```
 
 Интуиция: tightening должен уменьшать реальное нарушение $g(x)$, но часто платой становится ухудшение regret.
 
@@ -117,33 +126,39 @@ $$
 Шаг состоит из двух частей:
 
 1) **градиентный шаг по потере**:
-$$
-y_t \;=\; x_t - \eta \nabla f_t(x_t).
-$$
+
+```math
+y_t = x_t - \eta \nabla f_t(x_t)
+```
 
 2) **Polyak feasibility step** по линейной аппроксимации ограничения в точке $x_t$:
-пусть $g_t=g(x_t)$ и $s_t\in\partial g(x_t)$. Рассмотрим линейную модель в точке $x_t$:
-$$
-\ell_t(y)\;=\;g_t + s_t^\top(y-x_t) + \rho.
-$$
-Если $\ell_t(y_t)>0$, делаем «поляк-шаг»:
-$$
-y_t \leftarrow y_t - \frac{\ell_t(y_t)}{\|s_t\|^2}\,s_t.
-$$
+   пусть $g_t = g(x_t)$ и $s_t \in \partial g(x_t)$. Рассмотрим линейную модель в точке $x_t$:
+
+```math
+\ell_t(y) = g_t + s_t^\top (y - x_t) + \rho
+```
+
+Если $\ell_t(y_t) > 0$, делаем «поляк-шаг»:
+
+```math
+y_t \leftarrow y_t - \frac{\ell_t(y_t)}{\|s_t\|^2} s_t
+```
 
 3) проекция на простое множество $X_0$:
-$$
-x_{t+1}=\Pi_{X_0}(y_t).
-$$
+
+```math
+x_{t+1} = \Pi_{X_0}(y_t)
+```
 
 В коде tightening:
-$$
-\rho(T)=\min\Bigl(\varepsilon,\sqrt{\tfrac{\alpha}{T}}\Bigr),
-\qquad \alpha=\varepsilon,
-$$
+
+```math
+\rho(T) = \min\left(\varepsilon, \sqrt{\frac{\alpha}{T}}\right), \quad \alpha = \varepsilon
+```
+
 а шаг:
-- либо $\eta=\dfrac{\eta_{\mathrm{const}}}{\sqrt{T}}$ (если задано в конфиге),
-- либо дефолтно $\eta=\dfrac{\rho}{2\sqrt{2}}$ (как удобный масштаб для toy-задачи).
+- либо $\eta = \dfrac{\eta_{\mathrm{const}}}{\sqrt{T}}$ (если задано в конфиге),
+- либо дефолтно $\eta = \dfrac{\rho}{2\sqrt{2}}$ (как удобный масштаб для toy-задачи).
 
 ---
 
@@ -152,44 +167,49 @@ $$
 ### 3.1 Toy Quadratic (Benchmark A)
 
 Потери:
-$$
-f_t(x)=3\|x-v_t\|_2^2,\qquad v_t\sim \mathrm{Unif}([0,1]^d).
-$$
+
+```math
+f_t(x) = 3\|x - v_t\|_2^2, \quad v_t \sim \mathrm{Unif}([0,1]^d)
+```
 
 Простое множество:
-$$
-X_0 = B(R)=\{x:\|x\|_2\le R\}.
-$$
+
+```math
+X_0 = B(R) = \{x : \|x\|_2 \le R\}
+```
 
 Ограничение и допустимое множество:
-$$
-g(x)=\|x\|_\infty - b,\qquad
-X=\{x:\|x\|_\infty\le b\}=[-b,b]^d.
-$$
+
+```math
+g(x) = \|x\|_\infty - b, \quad X = \{x : \|x\|_\infty \le b\} = [-b, b]^d
+```
 
 ---
 
 ### 3.2 Online Logistic Regression (Benchmark B)
 
 Потери (логистическая):
-$$
-f_t(w)=\log\bigl(1+\exp(-y_t\,w^\top x_t)\bigr),\qquad y_t\in\{-1,+1\}.
-$$
+
+```math
+f_t(w) = \log\left(1 + \exp(-y_t \cdot w^\top x_t)\right), \quad y_t \in \{-1, +1\}
+```
 
 Генерация данных:
-- $x_t\sim\mathcal N(0,I)$,
-- фиксируется скрытый вектор $w^\star$ с $\lVert w^\star\rVert_2 = 1$,
-- затем $y_t = +1$ с вероятностью $\sigma\!\left((w^\star)^\top x_t\right)$, иначе $-1$.
+- $x_t \sim \mathcal{N}(0, I)$,
+- фиксируется скрытый вектор $w^\star$ с $\|w^\star\|_2 = 1$,
+- затем $y_t = +1$ с вероятностью $\sigma\left((w^\star)^\top x_t\right)$, иначе $-1$.
 
 Простое множество:
-$$
-X_0=B(R_0)=\{w:\|w\|_2\le R_0\}.
-$$
+
+```math
+X_0 = B(R_0) = \{w : \|w\|_2 \le R_0\}
+```
 
 Ограничение и допустимое множество:
-$$
-g(w)=\|w\|_2 - B,\qquad X=B(B)=\{w:\|w\|_2\le B\}.
-$$
+
+```math
+g(w) = \|w\|_2 - B, \quad X = B(B) = \{w : \|w\|_2 \le B\}
+```
 
 ---
 
@@ -202,7 +222,7 @@ $$
 python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
-````
+```
 
 Либо через `pyproject.toml` (если вы предпочитаете PEP-517/518 окружение):
 
@@ -274,7 +294,7 @@ oco-plot --input results/logreg/<TIMESTAMP>
 * алгоритмы:
 
   * `PFS.epsilon`
-  * `DPP` (без параметров, использует $\alpha=T$, $V=\sqrt{T}$)
+  * `DPP` (без параметров, использует $\alpha = T$, $V = \sqrt{T}$)
   * `DPP-T.epsilon`, `DPP-T.c`
   * `POGD.eta_const`
 
@@ -388,7 +408,7 @@ src/results/
 
 #### Итоговое кумулятивное нарушение (T=50000)
 
-* **POGD** — строго в $X$ (нулевое нарушение, т.к. проекция на $X=B(B)$),
+* **POGD** — строго в $X$ (нулевое нарушение, т.к. проекция на $X = B(B)$),
 * **PFS** — в этом прогоне также даёт нулевое нарушение,
 * **DPP** накапливает большое нарушение,
 * **DPP-T** уменьшает нарушение относительно DPP, но не устраняет.
@@ -403,7 +423,7 @@ src/results/
 
 #### Относительный разрыв по cumulative loss (vs лучший алгоритм)
 
-На этом прогоне DPP является лучшим по cumulative loss (поэтому его линия — около 0), а DPP-T накапливает большой разрыв.
+На этом прого��е DPP является лучшим по cumulative loss (поэтому его линия — около 0), а DPP-T накапливает большой разрыв.
 
 ![LogReg: Relative cumulative loss gap](src/results/logreg/loss_gap_vs_t.png)
 
@@ -418,9 +438,6 @@ src/results/
 | DPP-T |      243.76 |       5.79 |        174.14 |        47.47 |          0.05 |         0.01 |
 |  POGD |      178.86 |       5.56 |          0.00 |         0.00 |          0.00 |         0.00 |
 
-И изображение-оригинал:
-
-![LogReg: Summary table](src/results/logreg/summary_table.png)
 
 ---
 
