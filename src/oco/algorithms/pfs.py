@@ -2,8 +2,6 @@
 PFS: Online Gradient Descent + Polyak Feasibility Steps
 From paper: "Constrained Online Convex Optimization with Polyak Feasibility Steps" (2025)
 
-ВАЖНО: constraint query делается в x_t (не в y_t), затем используется
-линейная аппроксимация g(y_t) ≈ g(x_t) + s_t^T(y_t - x_t)
 """
 
 import numpy as np
