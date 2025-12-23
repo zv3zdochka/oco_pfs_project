@@ -351,7 +351,7 @@ The plot shows the typical behavior:
 * **DPP** is slightly worse in regret,
 * **DPP-T** loses noticeably in regret due to tightening.
 
-![Toy: Regret vs T](src/results/toy/20251223_163822/regret_vs_T.png)
+![Toy: Regret vs T](src/results/toy/regret_vs_T.png)
 
 #### Cumulative constraint violation
 
@@ -359,7 +359,7 @@ The plot shows the typical behavior:
 * **DPP** has substantial accumulated violation,
 * **DPP-T** reduces violation compared to DPP, but does not make it zero.
 
-![Toy: Cumulative violation vs T](src/results/toy/20251223_163822/cumviol_vs_T.png)
+![Toy: Cumulative violation vs T](src/results/toy/cumviol_vs_T.png)
 
 #### Instantaneous violation (T=20000)
 
@@ -369,13 +369,13 @@ The difference in “operating regime” is clearly visible:
 * for **DPP-T** the violation is much lower and closer to zero,
 * for **POGD/PFS** the violation is almost zero.
 
-![Toy: Instantaneous violation](src/results/toy/20251223_163822/instviol_vs_t_T20000.png)
+![Toy: Instantaneous violation](src/results/toy/instviol_vs_t_T20000.png)
 
 #### Trajectories (2D)
 
 On the toy task it is convenient to visually compare how algorithms “approach” the optimum and how often they go outside the feasible box.
 
-![Toy: Trajectories](src/results/toy/20251223_163822/trajectory_2d.png)
+![Toy: Trajectories](src/results/toy/trajectory_2d.png)
 
 ---
 
@@ -390,7 +390,7 @@ For this run:
 * **PFS** is worse in regret, but achieves zero violation,
 * **DPP-T** loses substantially in regret.
 
-![LogReg: Final regret comparison](src/results/logreg/20251223_171211/regret_comparison.png)
+![LogReg: Final regret comparison](src/results/logreg/regret_comparison.png)
 
 #### Final cumulative violation (T=50000)
 
@@ -399,19 +399,19 @@ For this run:
 * **DPP** accumulates large violation,
 * **DPP-T** reduces violation compared to DPP, but does not eliminate it.
 
-![LogReg: Final cumulative violation](src/results/logreg/20251223_171211/cumviol_comparison.png)
+![LogReg: Final cumulative violation](src/results/logreg/cumviol_comparison.png)
 
 #### Instantaneous violation over steps
 
 The plot highlights that for DPP/DPP-T the violation “pulses” and does not disappear, whereas POGD/PFS stay at zero.
 
-![LogReg: Instantaneous violation vs step](src/results/logreg/20251223_171211/instviol_vs_t.png)
+![LogReg: Instantaneous violation vs step](src/results/logreg/instviol_vs_t.png)
 
 #### Relative cumulative loss gap (vs the best algorithm)
 
 In this run DPP is the best in cumulative loss (hence its line is near 0), while DPP-T accumulates a large gap.
 
-![LogReg: Relative cumulative loss gap](src/results/logreg/20251223_171211/loss_gap_vs_t.png)
+![LogReg: Relative cumulative loss gap](src/results/logreg/loss_gap_vs_t.png)
 
 #### Summary table (mean/std over trials, T=50000)
 
@@ -426,7 +426,7 @@ In this run DPP is the best in cumulative loss (hence its line is near 0), while
 
 And the original image:
 
-![LogReg: Summary table](src/results/logreg/20251223_171211/summary_table.png)
+![LogReg: Summary table](src/results/logreg/summary_table.png)
 
 ---
 

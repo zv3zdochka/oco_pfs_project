@@ -345,7 +345,7 @@ src/results/
 * **DPP** чуть хуже по regret,
 * **DPP-T** заметно проигрывает по regret из-за tightening.
 
-![Toy: Regret vs T](src/results/toy/20251223_163822/regret_vs_T.png)
+![Toy: Regret vs T](src/results/toy/regret_vs_T.png)
 
 #### Кумулятивное нарушение ограничения
 
@@ -353,7 +353,7 @@ src/results/
 * **DPP** имеет существенное накопленное нарушение,
 * **DPP-T** уменьшает нарушение относительно DPP, но не делает его нулевым.
 
-![Toy: Cumulative violation vs T](src/results/toy/20251223_163822/cumviol_vs_T.png)
+![Toy: Cumulative violation vs T](src/results/toy/cumviol_vs_T.png)
 
 #### Мгновенное нарушение (T=20000)
 
@@ -363,13 +363,13 @@ src/results/
 * у **DPP-T** нарушение существенно ниже и ближе к нулю,
 * у **POGD/PFS** нарушение практически нулевое.
 
-![Toy: Instantaneous violation](src/results/toy/20251223_163822/instviol_vs_t_T20000.png)
+![Toy: Instantaneous violation](src/results/toy/instviol_vs_t_T20000.png)
 
 #### Траектории (2D)
 
 На toy-задаче удобно визуально сравнивать, как алгоритмы «подходят» к оптимуму и насколько часто выходят за допустимый box.
 
-![Toy: Trajectories](src/results/toy/20251223_163822/trajectory_2d.png)
+![Toy: Trajectories](src/results/toy/trajectory_2d.png)
 
 ---
 
@@ -384,7 +384,7 @@ src/results/
 * **PFS** хуже по regret, но обеспечивает нулевое нарушение,
 * **DPP-T** существенно теряет в regret.
 
-![LogReg: Final regret comparison](src/results/logreg/20251223_171211/regret_comparison.png)
+![LogReg: Final regret comparison](src/results/logreg/regret_comparison.png)
 
 #### Итоговое кумулятивное нарушение (T=50000)
 
@@ -393,19 +393,19 @@ src/results/
 * **DPP** накапливает большое нарушение,
 * **DPP-T** уменьшает нарушение относительно DPP, но не устраняет.
 
-![LogReg: Final cumulative violation](src/results/logreg/20251223_171211/cumviol_comparison.png)
+![LogReg: Final cumulative violation](src/results/logreg/cumviol_comparison.png)
 
 #### Мгновенное нарушение по шагам
 
 График подчёркивает, что у DPP/DPP-T нарушение «пульсирует» и не исчезает, тогда как POGD/PFS держатся на нуле.
 
-![LogReg: Instantaneous violation vs step](src/results/logreg/20251223_171211/instviol_vs_t.png)
+![LogReg: Instantaneous violation vs step](src/results/logreg/instviol_vs_t.png)
 
 #### Относительный разрыв по cumulative loss (vs лучший алгоритм)
 
 На этом прогоне DPP является лучшим по cumulative loss (поэтому его линия — около 0), а DPP-T накапливает большой разрыв.
 
-![LogReg: Relative cumulative loss gap](src/results/logreg/20251223_171211/loss_gap_vs_t.png)
+![LogReg: Relative cumulative loss gap](src/results/logreg/loss_gap_vs_t.png)
 
 #### Сводная таблица (mean/std по trial, T=50000)
 
@@ -420,7 +420,7 @@ src/results/
 
 И изображение-оригинал:
 
-![LogReg: Summary table](src/results/logreg/20251223_171211/summary_table.png)
+![LogReg: Summary table](src/results/logreg/summary_table.png)
 
 ---
 
