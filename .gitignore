@@ -176,3 +176,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 
+/prj.zip
+/src/results/toy/20251222_193949/
+/src/results/logreg/20251222_204224/
