@@ -8,4 +8,4 @@ A reproducible experimental framework for comparing:
 - POGD (Projected Online Gradient Descent)
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"

@@ -17,13 +17,12 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 import yaml
 
-
 # Style configuration
 COLORS = {
-    "PFS": "#2ecc71",      # Green
-    "DPP": "#e74c3c",      # Red
-    "DPP-T": "#3498db",    # Blue
-    "POGD": "#9b59b6"      # Purple
+    "PFS": "#2ecc71",  # Green
+    "DPP": "#e74c3c",  # Red
+    "DPP-T": "#3498db",  # Blue
+    "POGD": "#9b59b6"  # Purple
 }
 
 MARKERS = {
@@ -164,13 +163,13 @@ def plot_trajectory_2d(step_df: pd.DataFrame, output_path: Path,
     trial_1 = step_df[(step_df["T"] == T_max) & (step_df["trial"] == 1)]
 
     # Draw box constraint (feasible region X)
-    rect = plt.Rectangle((-b, -b), 2*b, 2*b, fill=False,
+    rect = plt.Rectangle((-b, -b), 2 * b, 2 * b, fill=False,
                          edgecolor="black", linewidth=2, linestyle="--",
                          label="Feasible region X")
     ax.add_patch(rect)
 
     # Draw unit circle (X_0)
-    theta = np.linspace(0, 2*np.pi, 100)
+    theta = np.linspace(0, 2 * np.pi, 100)
     ax.plot(np.cos(theta), np.sin(theta), 'k:', alpha=0.5, label="X₀ boundary")
 
     # Load and plot REAL optimal action from saved file
@@ -253,9 +252,9 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
         ax.plot(grouped.index, grouped["mean"], label=algo,
                 color=COLORS.get(algo, "gray"))
         ax.fill_between(grouped.index,
-                       grouped["mean"] - grouped["std"],
-                       grouped["mean"] + grouped["std"],
-                       color=COLORS.get(algo, "gray"), alpha=0.2)
+                        grouped["mean"] - grouped["std"],
+                        grouped["mean"] + grouped["std"],
+                        color=COLORS.get(algo, "gray"), alpha=0.2)
 
     ax.set_xlabel("Step t")
     ax.set_ylabel("Average Loss (cumulative / t)")
@@ -310,9 +309,9 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
         ax.plot(grouped.index, grouped["mean"], label=algo,
                 color=COLORS.get(algo, "gray"))
         ax.fill_between(grouped.index,
-                       grouped["mean"] - grouped["std"],
-                       grouped["mean"] + grouped["std"],
-                       color=COLORS.get(algo, "gray"), alpha=0.2)
+                        grouped["mean"] - grouped["std"],
+                        grouped["mean"] + grouped["std"],
+                        color=COLORS.get(algo, "gray"), alpha=0.2)
 
     ax.set_xlabel("Step t")
     ax.set_ylabel("Cumulative Loss")
@@ -334,9 +333,9 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
         ax.plot(grouped.index, grouped["mean"], label=algo,
                 color=COLORS.get(algo, "gray"))
         ax.fill_between(grouped.index,
-                       np.maximum(grouped["mean"] - grouped["std"], 0),
-                       grouped["mean"] + grouped["std"],
-                       color=COLORS.get(algo, "gray"), alpha=0.2)
+                        np.maximum(grouped["mean"] - grouped["std"], 0),
+                        grouped["mean"] + grouped["std"],
+                        color=COLORS.get(algo, "gray"), alpha=0.2)
 
     ax.set_xlabel("Step t")
     ax.set_ylabel("Instantaneous Violation")
@@ -358,9 +357,9 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
         ax.plot(grouped.index, grouped["mean"], label=algo,
                 color=COLORS.get(algo, "gray"))
         ax.fill_between(grouped.index,
-                       np.maximum(grouped["mean"] - grouped["std"], 0),
-                       grouped["mean"] + grouped["std"],
-                       color=COLORS.get(algo, "gray"), alpha=0.2)
+                        np.maximum(grouped["mean"] - grouped["std"], 0),
+                        grouped["mean"] + grouped["std"],
+                        color=COLORS.get(algo, "gray"), alpha=0.2)
 
     ax.set_xlabel("Step t")
     ax.set_ylabel("Cumulative Violation")
@@ -385,9 +384,9 @@ def plot_logreg_metrics(step_df: pd.DataFrame, agg_df: pd.DataFrame, output_path
         ax.plot(grouped.index, grouped["mean"], label=algo,
                 color=COLORS.get(algo, "gray"))
         ax.fill_between(grouped.index,
-                       np.maximum(grouped["mean"] - grouped["std"], 0),
-                       grouped["mean"] + grouped["std"],
-                       color=COLORS.get(algo, "gray"), alpha=0.2)
+                        np.maximum(grouped["mean"] - grouped["std"], 0),
+                        grouped["mean"] + grouped["std"],
+                        color=COLORS.get(algo, "gray"), alpha=0.2)
 
     ax.set_xlabel("Step t")
     ax.set_ylabel("Average Violation (cumulative / t)")
@@ -530,8 +529,8 @@ def generate_all_plots(output_dir: Path, config: Dict[str, Any]):
                 summary = summary.loc[algo_order]
                 x_pos = np.arange(len(algo_order))
                 ax.bar(x_pos, summary["mean"], yerr=summary["std"],
-                      color=[COLORS.get(a, "gray") for a in algo_order],
-                      capsize=5, alpha=0.8)
+                       color=[COLORS.get(a, "gray") for a in algo_order],
+                       capsize=5, alpha=0.8)
                 ax.set_xticks(x_pos)
                 ax.set_xticklabels(algo_order)
                 ax.set_ylabel("Final Regret")

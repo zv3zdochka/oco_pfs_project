@@ -139,14 +139,14 @@ def compute_optimal_loss(problem, data: Dict[str, Any], config: Dict[str, Any]) 
 
 
 def run_single_algo_trial(
-    problem,
-    algo,
-    algo_name: str,
-    data: Dict[str, Any],
-    T: int,
-    trial: int,
-    logger: MetricsLogger,
-    opt_loss: float
+        problem,
+        algo,
+        algo_name: str,
+        data: Dict[str, Any],
+        T: int,
+        trial: int,
+        logger: MetricsLogger,
+        opt_loss: float
 ) -> Dict[str, float]:
     """Run a single algorithm for one trial."""
 
