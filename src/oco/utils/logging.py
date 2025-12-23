@@ -77,7 +77,7 @@ class MetricsLogger:
         # Add coordinates (for toy) or norm (for logreg)
         if len(x) <= 2:
             for i, xi in enumerate(x):
-                record[f"x{i+1}"] = xi
+                record[f"x{i + 1}"] = xi
         else:
             record["x_norm"] = np.linalg.norm(x)
 

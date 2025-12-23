@@ -8,13 +8,13 @@ from typing import Tuple, List
 
 
 def solve_batch_logreg(
-    x_data: List[np.ndarray],
-    y_data: List[int],
-    B: float,
-    max_iter: int = 2000,
-    lr: float = 0.05,
-    seed: int = 999,
-    tol: float = 1e-6
+        x_data: List[np.ndarray],
+        y_data: List[int],
+        B: float,
+        max_iter: int = 2000,
+        lr: float = 0.05,
+        seed: int = 999,
+        tol: float = 1e-6
 ) -> Tuple[np.ndarray, float]:
     """
     Solve batch logistic regression:
