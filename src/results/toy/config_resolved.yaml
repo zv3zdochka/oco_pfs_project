@@ -1,0 +1,33 @@
+algorithms:
+  DPP: {}
+  DPP-T:
+    c: 20
+    epsilon: 0.25
+  PFS:
+    epsilon: 0.25
+  POGD:
+    eta_const: 0.2
+benchmark: toy
+description: Toy quadratic problem (d=2) from PFS paper 2025
+experiment:
+  horizons:
+  - 2000
+  - 4000
+  - 6000
+  - 8000
+  - 10000
+  - 12000
+  - 14000
+  - 16000
+  - 18000
+  - 20000
+  seed_base: 42
+  trials: 30
+output:
+  save_trajectories: true
+  trajectory_subsample: 300
+problem:
+  R: 1.0
+  b: 0.51
+  d: 2
+  type: toy_quadratic
