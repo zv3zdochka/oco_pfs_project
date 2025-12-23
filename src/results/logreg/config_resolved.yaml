@@ -1,0 +1,29 @@
+algorithms:
+  DPP: {}
+  DPP-T:
+    c: 20
+    epsilon: 0.5
+  PFS:
+    epsilon: 0.5
+    eta_const: 0.5
+  POGD:
+    eta_const: 0.5
+batch_solver:
+  lr: 0.05
+  max_iter: 2000
+  seed: 999
+benchmark: logreg
+description: Online Logistic Regression with norm constraint
+experiment:
+  horizons:
+  - 50000
+  seed_base: 42
+  trials: 10
+output:
+  save_trajectories: false
+problem:
+  B: 0.6
+  R0: 5.0
+  d: 20
+  type: online_logreg
+  w_star_seed: 123
