@@ -9,7 +9,7 @@ problem:
   w_star_seed: 123
 
 experiment:
-  horizons: [50000]
+  horizons: [ 50000 ]
   trials: 10
   seed_base: 42
 
@@ -17,7 +17,7 @@ algorithms:
   PFS:
     epsilon: 0.5
     eta_const: 0.5
-  DPP: {}
+  DPP: { }
   DPP-T:
     c: 20
     epsilon: 0.5
